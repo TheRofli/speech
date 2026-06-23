@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+cache/
+tmp/
+models/
+data/
+tauri/node_modules/
+tauri/dist/
+tauri/src-tauri/target/
+tauri/src-tauri/gen/
