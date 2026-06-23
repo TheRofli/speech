@@ -21,7 +21,7 @@ class AppSettings:
     engine_enabled: bool = True
     copy_to_clipboard: bool = True
     paste_to_active_input: bool = True
-    suppress_hotkey: bool = True
+    suppress_hotkey: bool = False
     preload_model: bool = False
     sample_rate: int = 16000
     vad_sensitivity: float = 0.02

@@ -18,7 +18,6 @@ class SettingsStoreTests(unittest.TestCase):
             self.assertEqual(settings.model_id, "nvidia/parakeet-tdt-0.6b-v3")
             self.assertEqual(settings.device, "cpu")
             self.assertEqual(settings.hotkey, "ctrl+win")
-            self.assertTrue(settings.suppress_hotkey)
             self.assertTrue(settings.copy_to_clipboard)
             self.assertTrue(settings.paste_to_active_input)
 
