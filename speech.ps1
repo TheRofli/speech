@@ -112,11 +112,16 @@ function Invoke-SpeechPython {
 }
 
 function Start-SpeechDetached {
+    param([switch] $ShowWindow)
     $python = Get-AppPython
+    $arguments = @("-m", "speech_app", "run")
+    if ($ShowWindow) {
+        $arguments += "--show-window"
+    }
     Set-Location -LiteralPath $Root
     Start-Process `
         -FilePath $python `
-        -ArgumentList @("-m", "speech_app", "run") `
+        -ArgumentList $arguments `
         -WorkingDirectory $Root `
         -WindowStyle Hidden
     Write-Host "Speech started in tray."
@@ -185,6 +190,11 @@ switch ($command) {
     "restart" {
         Stop-SpeechProcesses
         Start-SpeechDetached
+        exit 0
+    }
+    "open" {
+        Stop-SpeechProcesses
+        Start-SpeechDetached -ShowWindow
         exit 0
     }
     "status" {

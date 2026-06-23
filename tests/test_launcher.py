@@ -31,6 +31,16 @@ class LauncherTests(unittest.TestCase):
         self.assertIn('"stop"', script)
         self.assertIn('"restart"', script)
 
+    def test_launcher_can_open_window_after_restart(self):
+        script = (Path(__file__).resolve().parents[1] / "speech.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("[switch] $ShowWindow", script)
+        self.assertIn("--show-window", script)
+        self.assertIn('"open"', script)
+        self.assertIn("Start-SpeechDetached -ShowWindow", script)
+
 
 if __name__ == "__main__":
     unittest.main()

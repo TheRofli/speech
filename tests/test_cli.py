@@ -16,6 +16,12 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(args.command, "diagnose")
 
+    def test_run_can_open_window_on_start(self):
+        args = build_parser().parse_args(["run", "--show-window"])
+
+        self.assertEqual(args.command, "run")
+        self.assertTrue(args.show_window)
+
     def test_parakeet_install_uses_default_model_id(self):
         with patch("builtins.print"), patch(
             "huggingface_hub.snapshot_download", return_value="model-path"

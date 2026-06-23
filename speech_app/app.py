@@ -65,12 +65,14 @@ class SpeechApp:
         self.transcribing = False
         self.last_error = ""
 
-    def run(self) -> None:
+    def run(self, show_window: bool = False) -> None:
         self.root.after(30, self._pump_ui_queue)
         tray_started = self.tray.start()
         self._start_hotkeys()
         if not tray_started:
             self.last_error = "pystray is not installed; tray mode is unavailable."
+            self.window.show()
+        elif show_window:
             self.window.show()
         if self.settings.preload_model and self.settings.engine_enabled:
             self.load_model_background()
@@ -350,7 +352,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Compatibility alias for: speech diagnose",
     )
     subparsers = parser.add_subparsers(dest="command")
-    subparsers.add_parser("run", help="Start the Speech tray app.")
+    run_parser = subparsers.add_parser("run", help="Start the Speech tray app.")
+    run_parser.add_argument(
+        "--show-window",
+        action="store_true",
+        help="Open the Speech window immediately after starting the tray app.",
+    )
     subparsers.add_parser("diagnose", help="Check Python and dependency state.")
 
     parakeet = subparsers.add_parser("parakeet", help="Manage the Parakeet model.")
@@ -392,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     try:
         app = SpeechApp()
-        app.run()
+        app.run(show_window=bool(getattr(args, "show_window", False)))
         return 0
     finally:
         lock.release()
