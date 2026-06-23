@@ -98,6 +98,8 @@ speech foreground
 
 - Hold `Ctrl + Win` to record.
 - Release to transcribe.
+- The hotkey is suppressed while held so the active app can keep normal mouse
+  wheel scrolling instead of receiving `Ctrl + wheel`.
 - Right-click the tray icon for controls.
 - Use `Open Speech` from the tray, or run `speech open`, to open the Tauri UI.
 
