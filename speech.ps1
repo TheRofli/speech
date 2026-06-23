@@ -127,6 +127,38 @@ function Start-SpeechDetached {
     Write-Host "Speech started in tray."
 }
 
+function Start-SpeechUi {
+    $releaseExe = Join-Path $Root "tauri\src-tauri\target\release\speech-tauri.exe"
+    if (Test-Path -LiteralPath $releaseExe) {
+        Start-Process `
+            -FilePath $releaseExe `
+            -WorkingDirectory $Root
+        Write-Host "Speech UI opened."
+        return
+    }
+
+    $tauriDir = Join-Path $Root "tauri"
+    $packageJson = Join-Path $tauriDir "package.json"
+    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if (-not $npm) {
+        $npm = Get-Command npm -ErrorAction SilentlyContinue
+    }
+
+    if ($npm -and (Test-Path -LiteralPath $packageJson)) {
+        Start-Process `
+            -FilePath $npm.Source `
+            -ArgumentList @("run", "tauri:dev") `
+            -WorkingDirectory $tauriDir `
+            -WindowStyle Hidden
+        Write-Host "Speech UI opened in Tauri dev mode."
+        return
+    }
+
+    Write-Host "Tauri UI is unavailable; opening fallback window."
+    Stop-SpeechProcesses
+    Start-SpeechDetached -ShowWindow
+}
+
 function Get-SpeechProcesses {
     Get-CimInstance Win32_Process |
         Where-Object {
@@ -157,6 +189,13 @@ function Show-SpeechStatus {
     }
 
     $processes | Select-Object ProcessId, Name, CommandLine | Format-Table -AutoSize
+}
+
+function Ensure-SpeechRunning {
+    $processes = @(Get-SpeechProcesses)
+    if ($processes.Count -eq 0) {
+        Start-SpeechDetached
+    }
 }
 
 if ($SpeechArgs.Count -eq 0) {
@@ -193,8 +232,8 @@ switch ($command) {
         exit 0
     }
     "open" {
-        Stop-SpeechProcesses
-        Start-SpeechDetached -ShowWindow
+        Ensure-SpeechRunning
+        Start-SpeechUi
         exit 0
     }
     "status" {

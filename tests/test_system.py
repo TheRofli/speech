@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from speech_app.system import SystemActions
 
@@ -74,6 +76,26 @@ class SystemActionsTests(unittest.TestCase):
                 (0x11, 0, 0x0002, 0),
             ],
         )
+
+    def test_open_tauri_ui_prefers_release_executable(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            release = root / "tauri" / "src-tauri" / "target" / "release"
+            release.mkdir(parents=True)
+            exe = release / "speech-tauri.exe"
+            exe.write_text("", encoding="utf-8")
+            calls = []
+            actions = SystemActions(process_starter=lambda args, cwd: calls.append((args, cwd)))
+
+            self.assertTrue(actions.open_tauri_ui(root))
+
+        self.assertEqual(calls, [([str(exe)], root)])
+
+    def test_open_tauri_ui_returns_false_without_tauri_assets(self):
+        with TemporaryDirectory() as tmp:
+            actions = SystemActions(process_starter=lambda args, cwd: None)
+
+            self.assertFalse(actions.open_tauri_ui(Path(tmp)))
 
 
 if __name__ == "__main__":

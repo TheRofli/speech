@@ -39,7 +39,10 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("[switch] $ShowWindow", script)
         self.assertIn("--show-window", script)
         self.assertIn('"open"', script)
-        self.assertIn("Start-SpeechDetached -ShowWindow", script)
+        self.assertIn("function Start-SpeechUi", script)
+        self.assertIn("function Ensure-SpeechRunning", script)
+        self.assertIn("Start-SpeechUi", script)
+        self.assertIn("tauri:dev", script)
 
 
 if __name__ == "__main__":

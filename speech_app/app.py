@@ -73,7 +73,7 @@ class SpeechApp:
             self.last_error = "pystray is not installed; tray mode is unavailable."
             self.window.show()
         elif show_window:
-            self.window.show()
+            self._show_primary_window()
         if self.settings.preload_model and self.settings.engine_enabled:
             self.load_model_background()
         self.root.mainloop()
@@ -82,10 +82,10 @@ class SpeechApp:
         self.ui_queue.put(callback)
 
     def show_window(self) -> None:
-        self.post_ui(self.window.show)
+        self.post_ui(self._show_primary_window)
 
     def show_history(self) -> None:
-        self.post_ui(self.window.show_history)
+        self.post_ui(self._show_primary_window)
 
     def copy_last_transcript(self) -> None:
         entries = self.history.list()
@@ -94,6 +94,13 @@ class SpeechApp:
             return
         self.system.copy_to_clipboard(entries[0].text)
         self.post_ui(lambda: self.overlay.show_notice("Copied"))
+
+    def _show_primary_window(self) -> None:
+        speech_home = Path(__file__).resolve().parents[1]
+        if self.system.open_tauri_ui(speech_home):
+            self.overlay.show_notice("Opening Speech")
+            return
+        self.window.show()
 
     def toggle_engine(self) -> None:
         self.settings.engine_enabled = not self.settings.engine_enabled

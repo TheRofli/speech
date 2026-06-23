@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import ctypes
+import shutil
+import subprocess
 import time
+from pathlib import Path
 
 
 class SystemActions:
@@ -10,12 +13,14 @@ class SystemActions:
         user32=None,
         paste_sender=None,
         clipboard_writer=None,
+        process_starter=None,
         sleep=time.sleep,
     ) -> None:
         self._keyboard_controller = None
         self._user32 = user32
         self._paste_sender = paste_sender
         self._clipboard_writer = clipboard_writer
+        self._process_starter = process_starter
         self._sleep = sleep
         self._target_hwnd = None
         self._target_point: tuple[int, int] | None = None
@@ -86,6 +91,29 @@ class SystemActions:
             self._sleep(0.05)
         self._send_ctrl_v()
 
+    def open_tauri_ui(self, speech_root: Path) -> bool:
+        release_exe = (
+            speech_root
+            / "tauri"
+            / "src-tauri"
+            / "target"
+            / "release"
+            / "speech-tauri.exe"
+        )
+        if release_exe.exists():
+            return self._start_process([str(release_exe)], speech_root)
+
+        tauri_dir = speech_root / "tauri"
+        package_json = tauri_dir / "package.json"
+        if not package_json.exists():
+            return False
+
+        npm = shutil.which("npm.cmd") or shutil.which("npm")
+        if npm is None:
+            return False
+
+        return self._start_process([npm, "run", "tauri:dev"], tauri_dir)
+
     def _get_user32(self):
         if self._user32 is not None:
             return self._user32
@@ -94,6 +122,24 @@ class SystemActions:
             return self._user32
         except Exception:
             return None
+
+    def _start_process(self, args: list[str], cwd: Path) -> bool:
+        if self._process_starter is not None:
+            self._process_starter(args, cwd)
+            return True
+        try:
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            subprocess.Popen(
+                args,
+                cwd=str(cwd),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                creationflags=creationflags,
+            )
+            return True
+        except Exception:
+            return False
 
     def _attach_threads_for_foreground(self, hwnd) -> list[tuple[int, int]]:
         user32 = self._get_user32()

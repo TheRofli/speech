@@ -18,22 +18,37 @@ type HistoryItem = {
   text: string;
 };
 
-type Tab = "overview" | "controls" | "history" | "install";
+type Tab = "overview" | "controls" | "history" | "analysis" | "install";
+type ActionCommand = "speech_status" | "speech_diagnose" | "speech_restart" | "speech_stop";
 
 const emptySnapshot: AppSnapshot = {
   running: false,
   modelInstalled: false,
-  modelSizeLabel: "0 GB",
+  modelSizeLabel: "Not installed",
   modelSnapshot: "",
   historyCount: 0,
   speechRoot: "D:\\Speech",
 };
 
-const tabs: Array<{ id: Tab; label: string }> = [
-  { id: "overview", label: "Overview" },
-  { id: "controls", label: "Controls" },
-  { id: "history", label: "History" },
-  { id: "install", label: "Install" },
+const demoHistory: HistoryItem[] = [
+  {
+    id: "demo-1",
+    createdAt: new Date().toISOString(),
+    text: "Your latest transcript will appear here as a soft local note.",
+  },
+  {
+    id: "demo-2",
+    createdAt: new Date(Date.now() - 900000).toISOString(),
+    text: "History stays on this device, ready to search, copy, and review.",
+  },
+];
+
+const tabs: Array<{ id: Tab; label: string; short: string }> = [
+  { id: "overview", label: "Overview", short: "Home" },
+  { id: "controls", label: "Controls", short: "Run" },
+  { id: "history", label: "History", short: "Text" },
+  { id: "analysis", label: "Analysis", short: "Later" },
+  { id: "install", label: "Install", short: "Setup" },
 ];
 
 function App() {
@@ -42,27 +57,35 @@ function App() {
   const [selectedId, setSelectedId] = useState<string>("");
   const [filter, setFilter] = useState("");
   const [log, setLog] = useState("");
+  const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(getInitialTab());
 
   async function refresh() {
-    const [nextSnapshot, nextHistory] = await Promise.all([
-      invoke<AppSnapshot>("app_snapshot"),
-      invoke<HistoryItem[]>("recent_history", { limit: 24 }),
-    ]);
-    setSnapshot(nextSnapshot);
-    setHistory(nextHistory);
-    setSelectedId((current) => current || nextHistory[0]?.id || "");
+    try {
+      const [nextSnapshot, nextHistory] = await Promise.all([
+        invoke<AppSnapshot>("app_snapshot"),
+        invoke<HistoryItem[]>("recent_history", { limit: 80 }),
+      ]);
+      setSnapshot(nextSnapshot);
+      setHistory(nextHistory);
+      setSelectedId((current) => current || nextHistory[0]?.id || "");
+    } catch (error) {
+      setLog(String(error));
+      setHistory((current) => (current.length ? current : demoHistory));
+    }
   }
 
-  async function runAction(command: "speech_status" | "speech_diagnose" | "speech_restart" | "speech_stop") {
+  async function runAction(command: ActionCommand) {
     setBusy(true);
     try {
       const output = await invoke<string>(command);
       setLog(output.trim() || "Done");
       await refresh();
+      showToast("Command finished");
     } catch (error) {
       setLog(String(error));
+      showToast("Command failed");
     } finally {
       setBusy(false);
     }
@@ -71,22 +94,34 @@ function App() {
   async function copyText(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      setLog("Copied transcript");
+      showToast("Copied");
     } catch (error) {
       setLog(`Copy failed: ${String(error)}`);
+      showToast("Copy failed");
     }
   }
 
+  function showToast(message: string) {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 1700);
+  }
+
+  function chooseTab(nextTab: Tab) {
+    setTab(nextTab);
+    window.location.hash = nextTab;
+  }
+
   useEffect(() => {
-    refresh().catch((error) => setLog(String(error)));
+    refresh();
     const timer = window.setInterval(() => {
-      refresh().catch(() => undefined);
+      refresh();
     }, 2500);
     return () => window.clearInterval(timer);
   }, []);
 
   const statusText = snapshot.running ? "Ready" : "Stopped";
   const selected = history.find((item) => item.id === selectedId) || history[0];
+  const latest = history[0];
   const filteredHistory = useMemo(() => {
     const query = filter.trim().toLowerCase();
     if (!query) {
@@ -97,173 +132,420 @@ function App() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-          <div>
-            <h1>Speech</h1>
-            <p>local dictation</p>
-          </div>
-        </div>
-
+      <aside className="shelf">
+        <Brand />
         <nav className="nav-list" aria-label="Speech sections">
           {tabs.map((item) => (
             <button
               key={item.id}
               className={tab === item.id ? "active" : ""}
-              onClick={() => setTab(item.id)}
+              onClick={() => chooseTab(item.id)}
             >
-              {item.label}
+              <span>{item.label}</span>
+              <small>{item.short}</small>
             </button>
           ))}
         </nav>
-
-        <div className="soft-note">
+        <div className="model-ticket">
           <span>Parakeet</span>
           <strong>{snapshot.modelInstalled ? snapshot.modelSizeLabel : "missing"}</strong>
+          <small>{snapshot.modelSnapshot ? shortHash(snapshot.modelSnapshot) : "local model"}</small>
         </div>
       </aside>
 
-      <section className="content">
-        <header className="top-strip">
+      <section className="stage">
+        <header className="topbar">
           <div>
-            <p className="quiet-label">Status</p>
-            <h2>{statusText}</h2>
+            <p className="eyebrow">Local dictation</p>
+            <h1>{statusText}</h1>
           </div>
-          <div className={snapshot.running ? "status-pill on" : "status-pill"}>
-            <span />
-            {snapshot.running ? "Running" : "Off"}
+          <div className="topbar-actions">
+            <StatusPill running={snapshot.running} />
+            <button className="ghost-button" onClick={() => refresh()} disabled={busy}>
+              Refresh
+            </button>
           </div>
-          <button className="secondary-button" onClick={() => refresh()} disabled={busy}>
-            Refresh
-          </button>
         </header>
 
-        {tab === "overview" && (
-          <div className="overview-layout">
-            <article className="hero-card">
-              <div>
-                <p className="quiet-label">Push-to-talk</p>
-                <h3>Hold, speak, release.</h3>
-                <p>
-                  Speech keeps transcription local, then sends the text to the active
-                  input, clipboard, and history.
-                </p>
-              </div>
-              <WavePreview />
-            </article>
+        <section className="page" key={tab}>
+          {tab === "overview" && (
+            <Overview
+              snapshot={snapshot}
+              statusText={statusText}
+              latest={latest}
+              onCopyLatest={() => latest && copyText(latest.text)}
+            />
+          )}
 
-            <div className="metric-grid">
-              <Metric title="Runtime" value={statusText} detail={snapshot.speechRoot} />
-              <Metric title="Model" value={snapshot.modelSizeLabel} detail={snapshot.modelSnapshot || "Install Parakeet"} />
-              <Metric title="History" value={String(snapshot.historyCount)} detail="local transcript rows" />
-              <Metric title="Device" value="CPU" detail="stable default" />
-            </div>
+          {tab === "controls" && (
+            <Controls
+              busy={busy}
+              log={log}
+              snapshot={snapshot}
+              onAction={runAction}
+            />
+          )}
 
-            {selected && (
-              <article className="latest-card">
-                <div>
-                  <p className="quiet-label">Latest transcript</p>
-                  <p>{selected.text}</p>
-                </div>
-                <button onClick={() => copyText(selected.text)}>Copy</button>
-              </article>
-            )}
-          </div>
-        )}
+          {tab === "history" && (
+            <History
+              filteredHistory={filteredHistory}
+              filter={filter}
+              selected={selected}
+              selectedId={selectedId}
+              onCopy={copyText}
+              onFilter={setFilter}
+              onSelect={setSelectedId}
+            />
+          )}
 
-        {tab === "controls" && (
-          <section className="control-stack">
-            <article className="control-card">
-              <div>
-                <p className="quiet-label">Engine</p>
-                <h3>Python runtime bridge</h3>
-                <p>
-                  The Tauri window controls the proven Python engine while the UI moves
-                  into a smoother native shell.
-                </p>
-              </div>
-              <div className="button-row">
-                <button onClick={() => runAction("speech_status")} disabled={busy}>Status</button>
-                <button onClick={() => runAction("speech_diagnose")} disabled={busy}>Diagnose</button>
-                <button onClick={() => runAction("speech_restart")} disabled={busy}>Restart</button>
-                <button className="danger" onClick={() => runAction("speech_stop")} disabled={busy}>Stop</button>
-              </div>
-            </article>
-            <pre className="log-output">{log || "Command output will appear here."}</pre>
-          </section>
-        )}
+          {tab === "analysis" && (
+            <Analysis historyCount={snapshot.historyCount || history.length} />
+          )}
 
-        {tab === "history" && (
-          <section className="history-panel">
-            <div className="history-toolbar">
-              <div>
-                <p className="quiet-label">History</p>
-                <h3>{filteredHistory.length} transcripts</h3>
-              </div>
-              <input
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-                placeholder="Search transcripts"
-              />
-            </div>
-            <div className="history-list">
-              {filteredHistory.length === 0 && <div className="empty">No matching transcripts.</div>}
-              {filteredHistory.map((item) => (
-                <article
-                  className={item.id === selected?.id ? "history-item selected" : "history-item"}
-                  key={item.id}
-                  onClick={() => setSelectedId(item.id)}
-                >
-                  <div>
-                    <time>{formatTime(item.createdAt)}</time>
-                    <p>{item.text}</p>
-                  </div>
-                  <button onClick={(event) => { event.stopPropagation(); copyText(item.text); }}>
-                    Copy
-                  </button>
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {tab === "install" && (
-          <section className="install-panel">
-            <article>
-              <p className="quiet-label">One command</p>
-              <h3>Install from GitHub</h3>
-              <code>
-                powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.ps1 | iex"
-              </code>
-            </article>
-            <article>
-              <p className="quiet-label">Model</p>
-              <h3>Download Parakeet</h3>
-              <code>speech parakeet install</code>
-            </article>
-            <article>
-              <p className="quiet-label">Requirements</p>
-              <h3>Comfortable setup</h3>
-              <p>Windows 11, Python 3.11, 16 GB RAM, 20 GB free disk, microphone.</p>
-            </article>
-          </section>
-        )}
+          {tab === "install" && <Install />}
+        </section>
       </section>
+
+      {toast && <div className="toast">{toast}</div>}
     </main>
+  );
+}
+
+function Brand() {
+  return (
+    <div className="brand">
+      <div className="brand-mark" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
+      <div>
+        <h2>Speech</h2>
+        <p>soft local voice</p>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ running }: { running: boolean }) {
+  return (
+    <div className={running ? "status-pill running" : "status-pill"}>
+      <span />
+      {running ? "Running" : "Off"}
+    </div>
+  );
+}
+
+function Overview({
+  snapshot,
+  statusText,
+  latest,
+  onCopyLatest,
+}: {
+  snapshot: AppSnapshot;
+  statusText: string;
+  latest?: HistoryItem;
+  onCopyLatest: () => void;
+}) {
+  return (
+    <div className="overview-grid">
+      <article className="hero-card lifted">
+        <div className="hero-copy">
+          <p className="eyebrow">Push-to-talk</p>
+          <h3>Hold, speak, release.</h3>
+          <p>
+            Speech keeps dictation local, then sends the transcript to your active
+            input, clipboard, and searchable history.
+          </p>
+          <div className="hero-actions">
+            <kbd>Ctrl</kbd>
+            <kbd>Win</kbd>
+            <span>default hotkey</span>
+          </div>
+        </div>
+        <WavePreview />
+      </article>
+
+      <section className="stat-grid">
+        <Metric title="Runtime" value={statusText} detail={snapshot.speechRoot} />
+        <Metric title="Model" value={snapshot.modelSizeLabel} detail={snapshot.modelSnapshot || "Install Parakeet"} />
+        <Metric title="History" value={String(snapshot.historyCount)} detail="local transcripts" />
+        <Metric title="Device" value="CPU" detail="stable default" />
+      </section>
+
+      <article className="note-card latest-note">
+        <div>
+          <p className="eyebrow">Latest transcript</p>
+          <p>{latest?.text || "No transcript yet. Hold Ctrl + Win and say something."}</p>
+        </div>
+        <button className="ghost-button" onClick={onCopyLatest} disabled={!latest}>
+          Copy
+        </button>
+      </article>
+    </div>
+  );
+}
+
+function Controls({
+  busy,
+  log,
+  snapshot,
+  onAction,
+}: {
+  busy: boolean;
+  log: string;
+  snapshot: AppSnapshot;
+  onAction: (command: ActionCommand) => void;
+}) {
+  return (
+    <div className="controls-layout">
+      <article className="control-hero lifted">
+        <div>
+          <p className="eyebrow">Engine</p>
+          <h3>Python bridge, Tauri face.</h3>
+          <p>
+            The background engine stays proven and local. This window is the smoother
+            control surface for status, diagnostics, restarts, and history.
+          </p>
+        </div>
+        <StatusPill running={snapshot.running} />
+      </article>
+
+      <section className="control-grid">
+        <RuntimeCard
+          title="Runtime actions"
+          detail="Use these when the tray needs a nudge."
+          actions={[
+            ["Status", "speech_status"],
+            ["Diagnose", "speech_diagnose"],
+            ["Restart", "speech_restart"],
+            ["Stop", "speech_stop"],
+          ]}
+          busy={busy}
+          onAction={onAction}
+        />
+
+        <article className="soft-panel">
+          <p className="eyebrow">Mode</p>
+          <h4>Dictation profile</h4>
+          <div className="segmented readonly" aria-label="Runtime mode">
+            <span className="active">CPU</span>
+            <span>CUDA</span>
+            <span>Auto</span>
+          </div>
+          <p className="panel-copy">
+            CPU stays the stable default. CUDA and NeMo controls can become live
+            settings in the next settings bridge.
+          </p>
+        </article>
+
+        <article className="soft-panel">
+          <p className="eyebrow">Output</p>
+          <h4>Where text goes</h4>
+          <div className="route-list">
+            <Route label="Active input" active />
+            <Route label="Clipboard" active />
+            <Route label="History" active />
+          </div>
+        </article>
+      </section>
+
+      <pre className="log-output">{log || "Command output will appear here."}</pre>
+    </div>
+  );
+}
+
+function RuntimeCard({
+  title,
+  detail,
+  actions,
+  busy,
+  onAction,
+}: {
+  title: string;
+  detail: string;
+  actions: Array<[string, ActionCommand]>;
+  busy: boolean;
+  onAction: (command: ActionCommand) => void;
+}) {
+  return (
+    <article className="soft-panel action-panel">
+      <p className="eyebrow">Control</p>
+      <h4>{title}</h4>
+      <p className="panel-copy">{detail}</p>
+      <div className="button-row">
+        {actions.map(([label, command]) => (
+          <button
+            key={command}
+            className={command === "speech_stop" ? "danger-button" : ""}
+            disabled={busy}
+            onClick={() => onAction(command)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function Route({ label, active }: { label: string; active: boolean }) {
+  return (
+    <div className={active ? "route active" : "route"}>
+      <span />
+      {label}
+    </div>
+  );
+}
+
+function History({
+  filteredHistory,
+  filter,
+  selected,
+  selectedId,
+  onCopy,
+  onFilter,
+  onSelect,
+}: {
+  filteredHistory: HistoryItem[];
+  filter: string;
+  selected?: HistoryItem;
+  selectedId: string;
+  onCopy: (text: string) => void;
+  onFilter: (value: string) => void;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="history-layout">
+      <header className="history-header">
+        <div>
+          <p className="eyebrow">History</p>
+          <h3>{filteredHistory.length} transcripts</h3>
+        </div>
+        <input
+          value={filter}
+          onChange={(event) => onFilter(event.target.value)}
+          placeholder="Search transcripts"
+        />
+      </header>
+
+      <section className="history-body">
+        <div className="history-feed" aria-label="Transcript history">
+          {filteredHistory.length === 0 && (
+            <div className="empty">No matching transcripts.</div>
+          )}
+          {filteredHistory.map((item) => (
+            <button
+              className={item.id === selectedId ? "history-row selected" : "history-row"}
+              key={item.id}
+              onClick={() => onSelect(item.id)}
+            >
+              <time>{formatTime(item.createdAt)}</time>
+              <span>{item.text}</span>
+            </button>
+          ))}
+        </div>
+
+        <article className="reader-card lifted">
+          <div>
+            <p className="eyebrow">Selected transcript</p>
+            <p>{selected?.text || "Choose a transcript from the left."}</p>
+          </div>
+          <button className="ghost-button" onClick={() => selected && onCopy(selected.text)} disabled={!selected}>
+            Copy
+          </button>
+        </article>
+      </section>
+    </div>
+  );
+}
+
+function Analysis({ historyCount }: { historyCount: number }) {
+  return (
+    <div className="analysis-layout">
+      <article className="analysis-card lifted">
+        <div>
+          <p className="eyebrow">Future idea</p>
+          <h3>Personality analysis, later.</h3>
+          <p>
+            A future API connector could read selected transcripts and generate a
+            playful profile: thinking style, mood patterns, detective mode, writing
+            habits, and little observations about how you speak.
+          </p>
+        </div>
+        <div className="analysis-badge">
+          <span>API</span>
+          <strong>soon</strong>
+        </div>
+      </article>
+
+      <section className="analysis-steps">
+        <article>
+          <span>1</span>
+          <h4>Connect provider</h4>
+          <p>DeepSeek, OpenAI, local model, or another API key.</p>
+        </article>
+        <article>
+          <span>2</span>
+          <h4>Select source</h4>
+          <p>Use recent history, pinned transcripts, or a custom range.</p>
+        </article>
+        <article>
+          <span>3</span>
+          <h4>Generate profile</h4>
+          <p>Produce a fun private report. Current local rows: {historyCount}.</p>
+        </article>
+      </section>
+    </div>
+  );
+}
+
+function Install() {
+  return (
+    <div className="install-layout">
+      <article className="install-hero lifted">
+        <p className="eyebrow">Setup</p>
+        <h3>Clean GitHub install.</h3>
+        <p>
+          The repo ships source and docs. Models, virtualenvs, cache, and transcripts
+          stay local on your machine.
+        </p>
+      </article>
+
+      <CommandCard
+        title="Install from GitHub"
+        command={'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.ps1 | iex"'}
+      />
+      <CommandCard title="Download Parakeet" command="speech parakeet install" />
+      <CommandCard title="Open this UI" command="speech open" />
+
+      <article className="soft-panel">
+        <p className="eyebrow">Requirements</p>
+        <h4>Comfortable setup</h4>
+        <p className="panel-copy">
+          Windows 11, Python 3.11, microphone, 16 GB RAM recommended, 20 GB free
+          on D:. CPU is the stable default, CUDA is optional.
+        </p>
+      </article>
+    </div>
+  );
+}
+
+function CommandCard({ title, command }: { title: string; command: string }) {
+  return (
+    <article className="command-card">
+      <p className="eyebrow">{title}</p>
+      <code>{command}</code>
+    </article>
   );
 }
 
 function Metric({ title, value, detail }: { title: string; value: string; detail: string }) {
   return (
     <article className="metric-card">
-      <p className="quiet-label">{title}</p>
+      <p className="eyebrow">{title}</p>
       <strong>{value}</strong>
       <span>{detail}</span>
     </article>
@@ -273,8 +555,8 @@ function Metric({ title, value, detail }: { title: string; value: string; detail
 function WavePreview() {
   return (
     <div className="wave-preview" aria-hidden="true">
-      {[12, 24, 34, 24, 14, 28, 18].map((height, index) => (
-        <span key={index} style={{ height }} />
+      {[14, 26, 38, 24, 16, 30, 20].map((height, index) => (
+        <span key={index} style={{ "--bar-height": `${height}px` } as React.CSSProperties} />
       ))}
     </div>
   );
@@ -283,9 +565,23 @@ function WavePreview() {
 function formatTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return value;
+    return value || "local";
   }
-  return date.toLocaleString();
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function shortHash(value: string) {
+  return value.length > 10 ? `${value.slice(0, 10)}...` : value;
+}
+
+function getInitialTab(): Tab {
+  const hash = window.location.hash.replace("#", "");
+  return tabs.some((item) => item.id === hash) ? (hash as Tab) : "overview";
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

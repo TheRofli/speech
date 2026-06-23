@@ -49,7 +49,7 @@ The installer does not download Parakeet automatically unless you pass
 - local transcript history
 - load / unload model from RAM
 - CPU by default, CUDA optional
-- lightweight Tauri UI preview
+- polished Tauri UI for status, controls, history, setup, and future analysis
 
 ## Requirements
 
@@ -85,20 +85,21 @@ speech
 speech status
 speech stop
 speech restart
+speech open
 speech diagnose
 speech parakeet install
 speech foreground
 ```
 
-`speech` starts detached in the tray. Use `speech foreground` only when
-debugging.
+`speech` starts detached in the tray. `speech open` opens the Tauri UI. Use
+`speech foreground` only when debugging.
 
 ## Controls
 
 - Hold `Ctrl + Win` to record.
 - Release to transcribe.
 - Right-click the tray icon for controls.
-- Use `Open Speech` from the tray to see settings, resources, and history.
+- Use `Open Speech` from the tray, or run `speech open`, to open the Tauri UI.
 
 ## Local Data
 
@@ -114,10 +115,12 @@ D:\Speech\tmp
 The app does not send audio or transcripts to an online service. Hugging Face is
 used only when you run `speech parakeet install`.
 
-## Tauri UI Preview
+## Tauri UI
 
-The stable runtime is still the Python tray app. The Tauri UI is the new native
-front end and currently controls the existing Python engine.
+The stable runtime is still the Python tray app. The Tauri UI is now the primary
+window for status, controls, history, setup, and future analysis experiments.
+If a packaged Tauri executable exists, `speech open` launches it. Otherwise it
+falls back to Tauri dev mode when Node dependencies are installed.
 
 ```powershell
 cd D:\Speech\tauri
@@ -175,7 +178,9 @@ Supported model capabilities include:
 
 ## Roadmap
 
-- polished Tauri settings/history window
+- live Tauri settings bridge for device/backend/output toggles
+- optional transcript/personality analysis tab through DeepSeek, OpenAI, or a
+  local model
 - Tauri tray replacement
 - signed Windows release
 - CUDA install helper
