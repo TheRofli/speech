@@ -224,6 +224,9 @@ class SystemActions:
         if user32 is None:
             return
         keyeventf_keyup = 0x0002
+        vk_shift = 0x10
+        user32.keybd_event(vk_shift, 0, 0, 0)
+        user32.keybd_event(vk_shift, 0, keyeventf_keyup, 0)
         for vk in (0x5B, 0x5C, 0xA2, 0xA3, 0x11):
             user32.keybd_event(vk, 0, keyeventf_keyup, 0)
 

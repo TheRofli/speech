@@ -22,7 +22,7 @@ class AppSettings:
     copy_to_clipboard: bool = True
     paste_to_active_input: bool = True
     suppress_hotkey: bool = False
-    preload_model: bool = False
+    preload_model: bool = True
     sample_rate: int = 16000
     vad_sensitivity: float = 0.02
     history_limit: int = 100

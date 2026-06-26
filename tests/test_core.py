@@ -20,6 +20,7 @@ class SettingsStoreTests(unittest.TestCase):
             self.assertEqual(settings.hotkey, "ctrl+win")
             self.assertTrue(settings.copy_to_clipboard)
             self.assertTrue(settings.paste_to_active_input)
+            self.assertTrue(settings.preload_model)
 
     def test_round_trips_known_settings_and_ignores_unknown_fields(self):
         with tempfile.TemporaryDirectory() as tmp:

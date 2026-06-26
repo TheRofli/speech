@@ -189,6 +189,7 @@ class SpeechApp:
     def _quit_ui(self) -> None:
         if self.hotkey_listener is not None:
             self.hotkey_listener.stop()
+        self.engine.unload()
         self.tray.stop()
         self.root.quit()
         self.root.destroy()

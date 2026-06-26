@@ -7,17 +7,25 @@ from speech_app.settings import AppSettings
 class FakeWindow:
     def __init__(self) -> None:
         self.refresh_count = 0
+        self.show_count = 0
 
     def refresh(self) -> None:
         self.refresh_count += 1
+
+    def show(self) -> None:
+        self.show_count += 1
 
 
 class FakeTray:
     def __init__(self) -> None:
         self.refresh_count = 0
+        self.stop_count = 0
 
     def refresh_menu(self) -> None:
         self.refresh_count += 1
+
+    def stop(self) -> None:
+        self.stop_count += 1
 
 
 class FakeOverlay:
@@ -57,9 +65,33 @@ class FakeRecorder:
 class FakeHotkeyListener:
     def __init__(self) -> None:
         self.ignore_windows = []
+        self.stop_count = 0
 
     def ignore_releases_for(self, seconds: float) -> None:
         self.ignore_windows.append(seconds)
+
+    def stop(self) -> None:
+        self.stop_count += 1
+
+
+class FakeRoot:
+    def __init__(self) -> None:
+        self.quit_count = 0
+        self.destroy_count = 0
+
+    def quit(self) -> None:
+        self.quit_count += 1
+
+    def destroy(self) -> None:
+        self.destroy_count += 1
+
+
+class FakeEngine:
+    def __init__(self) -> None:
+        self.unload_count = 0
+
+    def unload(self) -> None:
+        self.unload_count += 1
 
 
 class AppStateTests(unittest.TestCase):
@@ -92,6 +124,21 @@ class AppStateTests(unittest.TestCase):
         self.assertEqual(app.hotkey_listener.ignore_windows, [0.2])
         self.assertEqual(app.recorder.start_count, 1)
         self.assertEqual(app.overlay.recording_count, 1)
+
+    def test_quit_unloads_model_before_destroying_root(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.hotkey_listener = FakeHotkeyListener()
+        app.tray = FakeTray()
+        app.root = FakeRoot()
+        app.engine = FakeEngine()
+
+        app._quit_ui()
+
+        self.assertEqual(app.engine.unload_count, 1)
+        self.assertEqual(app.hotkey_listener.stop_count, 1)
+        self.assertEqual(app.tray.stop_count, 1)
+        self.assertEqual(app.root.quit_count, 1)
+        self.assertEqual(app.root.destroy_count, 1)
 
 
 if __name__ == "__main__":

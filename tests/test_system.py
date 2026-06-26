@@ -65,6 +65,8 @@ class SystemActionsTests(unittest.TestCase):
         self.assertEqual(
             user32.key_events,
             [
+                (0x10, 0, 0, 0),
+                (0x10, 0, 0x0002, 0),
                 (0x5B, 0, 0x0002, 0),
                 (0x5C, 0, 0x0002, 0),
                 (0xA2, 0, 0x0002, 0),
@@ -74,6 +76,22 @@ class SystemActionsTests(unittest.TestCase):
                 (0x56, 0, 0, 0),
                 (0x56, 0, 0x0002, 0),
                 (0x11, 0, 0x0002, 0),
+            ],
+        )
+
+    def test_release_hotkey_modifiers_marks_windows_key_as_chord_first(self):
+        user32 = FakeUser32()
+        actions = SystemActions(user32=user32, sleep=lambda seconds: None)
+
+        actions.release_hotkey_modifiers()
+
+        self.assertEqual(
+            user32.key_events[:4],
+            [
+                (0x10, 0, 0, 0),
+                (0x10, 0, 0x0002, 0),
+                (0x5B, 0, 0x0002, 0),
+                (0x5C, 0, 0x0002, 0),
             ],
         )
 
