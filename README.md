@@ -1,16 +1,15 @@
 # Speech
 
-Speech is a local push-to-talk dictation app for Windows. Hold a hotkey, speak,
-release, and the transcript is pasted into the active input, copied to the
-clipboard, and saved in local history.
+Speech is a local push-to-talk dictation app. Hold a hotkey, speak, release,
+and the transcript is pasted into the active input, copied to the clipboard,
+and saved in searchable local history.
 
-The default recognition model is NVIDIA Parakeet:
+Speech runs locally on your machine. Audio and transcripts are not sent to an
+online speech service.
 
-```text
-nvidia/parakeet-tdt-0.6b-v3
-```
+## Quick Install
 
-## Install
+### Windows 11
 
 Open PowerShell and run:
 
@@ -18,7 +17,7 @@ Open PowerShell and run:
 powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.ps1 | iex"
 ```
 
-Then download the speech model:
+Then download the local speech model:
 
 ```powershell
 speech parakeet install
@@ -30,55 +29,135 @@ Start Speech:
 speech
 ```
 
-By default Speech installs to:
+The Windows bootstrap downloads the source from GitHub, creates a local virtual
+environment, installs dependencies, and adds the `speech` command to your user
+PATH. If Python 3.11 is missing, it tries to install it with `winget`.
+
+Default install location:
 
 ```text
-D:\Speech
+%LOCALAPPDATA%\Programs\Speech
 ```
 
-The installer does not download Parakeet automatically unless you pass
-`-DownloadParakeet`, because the model cache is about 4.67 GB.
+To choose another folder:
 
-## What You Get
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.ps1))) -InstallDir 'E:\Apps\Speech'"
+```
 
-- tray app
-- `Ctrl + Win` push-to-talk
-- local Parakeet transcription
-- active input paste
-- clipboard copy
-- local transcript history
-- load / unload model from RAM
-- CPU by default, CUDA optional
-- polished Tauri UI for status, controls, history, setup, and future analysis
+### macOS
+
+Open Terminal and run:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.sh)"
+```
+
+Then download the local speech model:
+
+```bash
+speech parakeet install
+```
+
+Start Speech:
+
+```bash
+speech
+```
+
+The macOS bootstrap downloads the source from GitHub, creates a local virtual
+environment, installs dependencies, and links `speech` into `~/.local/bin`.
+If Python 3.11 is missing, it uses `uv` to install a local Python runtime.
+
+Default install location:
+
+```text
+~/.speech
+```
+
+To choose another folder:
+
+```bash
+SPEECH_INSTALL_DIR="$HOME/Applications/Speech" /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.sh)"
+```
+
+macOS support is source-install support. The Python tray/runtime is the stable
+path; packaged signed `.app` builds are still planned.
+
+## Model
+
+Speech uses NVIDIA Parakeet by default:
+
+```text
+nvidia/parakeet-tdt-0.6b-v3
+```
+
+Parakeet TDT 0.6B v3 is a 600M-parameter multilingual automatic speech
+recognition model from NVIDIA. The model card lists 25 supported languages,
+including English, Russian, Ukrainian, German, French, Spanish, Portuguese,
+Italian, Polish, Dutch, Turkish, Arabic, Chinese, Japanese, and Korean.
+
+Useful capabilities:
+
+- automatic language detection
+- punctuation and capitalization
+- timestamps
+- long audio support
+- CPU mode by default, CUDA optional on Windows/Linux systems with a compatible
+  NVIDIA setup
+
+Sources:
+
+- [NVIDIA Parakeet TDT 0.6B v3 model card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
+- [NVIDIA NeMo ASR collection](https://docs.nvidia.com/nemo-framework/user-guide/latest/nemotoolkit/asr/intro.html)
 
 ## Requirements
 
 Minimum practical setup:
 
-- Windows 11
-- Python 3.11
-- 8 GB RAM
-- 12 GB free disk space on `D:`
+- Windows 11 or macOS 13+
+- Python 3.11, installed automatically by the bootstrap when possible
 - working microphone
+- 8 GB RAM
+- 10 GB free disk space for the app, virtual environment, caches, and model
 
 Recommended:
 
-- Windows 11
 - 16 GB RAM or more
-- 20 GB free disk space on `D:`
 - modern 4-core CPU or better
-- 80 GB RAM is very comfortable for large local-model workflows
-- NVIDIA GPU is optional
+- 15-20 GB free disk space
+- NVIDIA GPU only if you specifically want CUDA
 
 Notes:
 
 - CPU mode is the stable default.
-- CUDA mode requires a CUDA-compatible PyTorch install.
-- macOS and Ubuntu/Linux are planned, but not supported yet.
-- No model files, venvs, caches, transcripts, or local data are meant to be
-  committed to Git.
+- CUDA requires a compatible NVIDIA driver and PyTorch CUDA install.
+- The model is downloaded only when you run `speech parakeet install` or pass
+  the bootstrap download flag.
+- Model files, virtual environments, caches, transcripts, and local settings are
+  intentionally excluded from Git.
+
+## Controls
+
+Default hotkeys:
+
+- Windows: hold `Ctrl + Win`
+- macOS: hold `Control + Command`
+
+Workflow:
+
+1. Hold the hotkey.
+2. Speak.
+3. Release.
+4. Speech transcribes locally, then sends text to the active input, clipboard,
+   and local history.
+
+The tray menu lets you open the window, copy the last transcript, load/unload
+Parakeet, switch CPU/CUDA mode, and quit.
 
 ## Commands
+
+Windows PowerShell:
 
 ```powershell
 speech
@@ -91,67 +170,68 @@ speech parakeet install
 speech foreground
 ```
 
-`speech` starts detached in the tray. `speech open` opens the Tauri UI. Use
-`speech foreground` only when debugging.
+macOS Terminal:
 
-## Controls
+```bash
+speech
+speech status
+speech stop
+speech restart
+speech diagnose
+speech parakeet install
+speech foreground
+```
 
-- Hold `Ctrl + Win` to record.
-- Release to transcribe.
-- The hotkey is suppressed while held so the active app can keep normal mouse
-  wheel scrolling instead of receiving `Ctrl + wheel`.
-- Right-click the tray icon for controls.
-- Use `Open Speech` from the tray, or run `speech open`, to open the Tauri UI.
+`speech` starts the background tray/runtime. `speech foreground` is mainly for
+debugging because it keeps logs attached to the terminal.
 
 ## Local Data
 
-Speech keeps local data here:
+Speech stores local runtime data inside the install folder:
 
 ```text
-D:\Speech\data
-D:\Speech\models
-D:\Speech\cache
-D:\Speech\tmp
+data/       transcripts, settings, runtime state
+models/     Hugging Face and Torch model caches
+cache/      package and runtime cache
+tmp/        temporary audio files
+.venv/      local Python virtual environment
 ```
 
-The app does not send audio or transcripts to an online service. Hugging Face is
-used only when you run `speech parakeet install`.
-
-## Tauri UI
-
-The stable runtime is still the Python tray app. The Tauri UI is now the primary
-window for status, controls, history, setup, and future analysis experiments.
-If a packaged Tauri executable exists, `speech open` launches it. Otherwise it
-falls back to Tauri dev mode when Node dependencies are installed.
-
-```powershell
-cd D:\Speech\tauri
-npm install
-npm run tauri:dev
-```
-
-Build checks:
-
-```powershell
-cd D:\Speech\tauri
-npm run build
-cd src-tauri
-cargo check
-```
+No audio or transcript data is uploaded by the app. Hugging Face is contacted
+only when downloading the model.
 
 ## Development
+
+Clone and install locally:
+
+```powershell
+git clone https://github.com/TheRofli/speech.git
+cd speech
+.\install.ps1
+```
+
+macOS/Linux shell:
+
+```bash
+git clone https://github.com/TheRofli/speech.git
+cd speech
+./install.sh
+```
 
 Python tests:
 
 ```powershell
-D:\Speech\.venv\Scripts\python.exe -m unittest discover -s D:\Speech\tests
+.\.venv\Scripts\python.exe -m unittest discover -s .\tests
 ```
 
-PowerShell install scripts:
+Frontend checks:
 
 ```powershell
-.\install.ps1
-speech diagnose
+cd tauri
+npm install
+npm run build
+cd src-tauri
+cargo check
 ```
 
 Keep these out of commits:
@@ -164,28 +244,13 @@ Keep these out of commits:
 - `tauri/node_modules/`
 - `tauri/dist/`
 - `tauri/src-tauri/target/`
-
-## Parakeet Modes
-
-Parakeet v3 is one 0.6B checkpoint, not a Whisper-style
-Tiny/Base/Medium/Large family.
-
-Supported model capabilities include:
-
-- dictation
-- automatic language detection
-- punctuation and capitalization
-- timestamp support
-- long-form / streaming later through NeMo support
+- `tauri/src-tauri/gen/`
 
 ## Roadmap
 
+- signed Windows installer release
+- signed macOS `.app` release
 - live Tauri settings bridge for device/backend/output toggles
-- optional transcript/personality analysis tab through DeepSeek, OpenAI, or a
-  local model
-- Tauri tray replacement
-- signed Windows release
-- CUDA install helper
+- optional CUDA install helper
 - optional NeMo backend
-- macOS support
-- Ubuntu/Linux support
+- optional transcript analysis tab through DeepSeek, OpenAI, or a local model

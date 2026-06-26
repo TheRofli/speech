@@ -31,6 +31,15 @@ class LauncherTests(unittest.TestCase):
         self.assertIn('"stop"', script)
         self.assertIn('"restart"', script)
 
+    def test_launcher_can_bootstrap_python_without_personal_paths(self):
+        script = (Path(__file__).resolve().parents[1] / "speech.ps1").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function Install-PythonWithWinget", script)
+        self.assertIn("Python.Python.3.11", script)
+        self.assertNotIn("hermes", script.lower())
+
     def test_launcher_can_open_window_after_restart(self):
         script = (Path(__file__).resolve().parents[1] / "speech.ps1").read_text(
             encoding="utf-8"

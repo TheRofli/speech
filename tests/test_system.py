@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from speech_app.system import SystemActions
 
@@ -23,6 +24,30 @@ class FakeUser32:
 
     def keybd_event(self, vk, scan, flags, extra):
         self.key_events.append((vk, scan, flags, extra))
+
+
+class FakePressed:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class FakeKeyboard:
+    def __init__(self) -> None:
+        self.modifiers = []
+        self.keys = []
+
+    def pressed(self, key):
+        self.modifiers.append(str(key))
+        return FakePressed()
+
+    def press(self, key):
+        self.keys.append(("press", key))
+
+    def release(self, key):
+        self.keys.append(("release", key))
 
 
 class SystemActionsTests(unittest.TestCase):
@@ -85,6 +110,33 @@ class SystemActionsTests(unittest.TestCase):
 
         self.assertEqual(user32.key_events[0], (0x5B, 0, 0x0002, 0))
         self.assertEqual(user32.key_events[-1], (0x11, 0, 0x0002, 0))
+
+    def test_paste_modifier_uses_command_modifier_on_macos(self):
+        actions = SystemActions()
+
+        with patch("speech_app.system.sys.platform", "darwin"):
+            modifier = actions._paste_modifier_attr()
+
+        self.assertEqual(modifier, "cmd")
+
+    def test_paste_modifier_uses_control_modifier_off_macos(self):
+        actions = SystemActions()
+
+        with patch("speech_app.system.sys.platform", "win32"):
+            modifier = actions._paste_modifier_attr()
+
+        self.assertEqual(modifier, "ctrl_l")
+
+    def test_pynput_paste_uses_selected_modifier(self):
+        keyboard = FakeKeyboard()
+        actions = SystemActions()
+        actions._keyboard_controller = keyboard
+
+        with patch.object(actions, "_paste_modifier_attr", return_value="ctrl_l"):
+            actions._send_ctrl_v_with_pynput()
+
+        self.assertIn("Key.ctrl_l", keyboard.modifiers)
+        self.assertEqual(keyboard.keys, [("press", "v"), ("release", "v")])
 
     def test_open_tauri_ui_prefers_release_executable(self):
         with TemporaryDirectory() as tmp:

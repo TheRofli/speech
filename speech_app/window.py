@@ -547,14 +547,14 @@ class SpeechWindow:
         self._quiet_label(intro, "GitHub setup").pack(anchor="w")
         tk.Label(
             intro,
-            text="Clean install, no heavy files in the repo.",
+            text="Clean install for Windows and macOS.",
             bg=SURFACE,
             fg=INK,
             font=("Segoe UI", 22, "bold"),
         ).pack(anchor="w")
         tk.Label(
             intro,
-            text="The repository keeps code and docs only. Models, virtualenvs, caches, and builds stay local on D:.",
+            text="The repository keeps code and docs only. Models, virtualenvs, caches, transcripts, and builds stay local on each machine.",
             bg=SURFACE,
             fg=MUTED,
             justify="left",
@@ -564,8 +564,13 @@ class SpeechWindow:
 
         self._command_card(
             parent,
-            "Install from GitHub",
+            "Install on Windows",
             'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.ps1 | iex"',
+        )
+        self._command_card(
+            parent,
+            "Install on macOS",
+            '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.sh)"',
         )
         self._command_card(parent, "Download Parakeet", "speech parakeet install")
         requirements = self._panel(parent)
@@ -573,7 +578,7 @@ class SpeechWindow:
         self._section_title(requirements, "Requirements")
         tk.Label(
             requirements,
-            text="Windows 11, Python 3.11, microphone, 8 GB RAM minimum, 16 GB+ recommended, 12-20 GB free on D:. CPU is the stable default; CUDA is optional.",
+            text="Windows 11 or macOS 13+, microphone, 8 GB RAM minimum, 16 GB+ recommended, and 10-20 GB free disk space. CPU is the stable default; CUDA is optional on compatible NVIDIA systems.",
             bg=SURFACE,
             fg=MUTED,
             justify="left",

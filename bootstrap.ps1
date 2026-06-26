@@ -1,11 +1,20 @@
 param(
     [string] $Repository = "TheRofli/speech",
     [string] $Branch = "main",
-    [string] $InstallDir = "D:\Speech",
+    [string] $InstallDir = "",
     [switch] $DownloadParakeet
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $InstallDir) {
+    if ($env:LOCALAPPDATA) {
+        $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\Speech"
+    }
+    else {
+        $InstallDir = Join-Path $HOME "Speech"
+    }
+}
 
 function Assert-SafeTempPath {
     param([string] $Path)
@@ -48,7 +57,7 @@ try {
     }
 
     Write-Host ""
-    Write-Host "Speech is installed."
+    Write-Host "Speech is installed at $InstallDir."
     Write-Host "Start it with: speech"
     Write-Host "Download Parakeet later with: speech parakeet install"
 }

@@ -29,7 +29,7 @@ const emptySnapshot: AppSnapshot = {
   modelSizeLabel: "Not installed",
   modelSnapshot: "",
   historyCount: 0,
-  speechRoot: "D:\\Speech",
+  speechRoot: "Speech install folder",
 };
 
 const demoHistory: HistoryItem[] = [
@@ -278,7 +278,10 @@ function Overview({
           <div className="hero-actions">
             <kbd>Ctrl</kbd>
             <kbd>Win</kbd>
-            <span>default hotkey</span>
+            <span>Windows</span>
+            <kbd>Control</kbd>
+            <kbd>Command</kbd>
+            <span>macOS</span>
           </div>
         </div>
         <WavePreview />
@@ -302,7 +305,7 @@ function Overview({
       <article className="note-card latest-note">
         <div>
           <p className="eyebrow">Latest transcript</p>
-          <p>{latest?.text || "No transcript yet. Hold Ctrl + Win and say something."}</p>
+          <p>{latest?.text || "No transcript yet. Hold the default hotkey and say something."}</p>
         </div>
         <button className="ghost-button" onClick={onCopyLatest} disabled={!latest}>
           Copy
@@ -537,13 +540,17 @@ function Install() {
         <h3>Clean GitHub install.</h3>
         <p>
           The repo ships source and docs. Models, virtualenvs, cache, and transcripts
-          stay local on your machine.
+          stay local on each machine.
         </p>
       </article>
 
       <CommandCard
-        title="Install from GitHub"
+        title="Install on Windows"
         command={'powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.ps1 | iex"'}
+      />
+      <CommandCard
+        title="Install on macOS"
+        command={'/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/TheRofli/speech/main/bootstrap.sh)"'}
       />
       <CommandCard title="Download Parakeet" command="speech parakeet install" />
       <CommandCard title="Open this UI" command="speech open" />
@@ -552,8 +559,8 @@ function Install() {
         <p className="eyebrow">Requirements</p>
         <h4>Comfortable setup</h4>
         <p className="panel-copy">
-          Windows 11, Python 3.11, microphone, 16 GB RAM recommended, 20 GB free
-          on D:. CPU is the stable default, CUDA is optional.
+          Windows 11 or macOS 13+, microphone, 8 GB RAM minimum, 16 GB+
+          recommended, and 10-20 GB free disk space. CPU is the stable default.
         </p>
       </article>
     </div>

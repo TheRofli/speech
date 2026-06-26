@@ -8,7 +8,6 @@ $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
 $VenvPython = Join-Path $Root ".venv\Scripts\python.exe"
 $VenvPythonw = Join-Path $Root ".venv\Scripts\pythonw.exe"
-$HermesPython = Join-Path $env:LOCALAPPDATA "hermes\hermes-agent\venv\Scripts\python.exe"
 $PortableEnv = @{
     SPEECH_HOME = $Root
     PYTHONPATH = $Root
@@ -44,9 +43,6 @@ function Get-BasePython {
     if (Test-Path -LiteralPath $VenvPython) {
         return $VenvPython
     }
-    if (Test-Path -LiteralPath $HermesPython) {
-        return $HermesPython
-    }
     return "python"
 }
 
@@ -65,14 +61,46 @@ function New-SpeechVenv {
     $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
     if ($pyLauncher) {
         & py -3.11 -m venv (Join-Path $Root ".venv")
-        return
+        if (Test-Path -LiteralPath $VenvPython) {
+            return
+        }
+        Write-Host "Python 3.11 launcher is unavailable; trying installed python."
     }
 
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($python) {
+        & python -m venv (Join-Path $Root ".venv")
+        if (Test-Path -LiteralPath $VenvPython) {
+            return
+        }
+        Write-Host "Installed python could not create a venv; trying winget."
+    }
+
+    Install-PythonWithWinget
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        & py -3.11 -m venv (Join-Path $Root ".venv")
+        return
+    }
     & python -m venv (Join-Path $Root ".venv")
 }
 
+function Install-PythonWithWinget {
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        throw "Python 3.11 is required. Install it from https://www.python.org/downloads/ and run install again."
+    }
+
+    Write-Host "Installing Python 3.11 with winget..."
+    & winget install --id Python.Python.3.11 --exact --scope user --accept-package-agreements --accept-source-agreements
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath) {
+        $env:Path = $env:Path + ";" + $userPath
+    }
+}
+
 function Install-Speech {
-    Write-Host "Creating Speech environment on D..."
+    Write-Host "Creating Speech environment..."
     New-SpeechVenv
 
     Write-Host "Installing Speech runtime dependencies..."

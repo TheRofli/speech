@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import sys
 import shutil
 import subprocess
 import time
@@ -239,9 +240,13 @@ class SystemActions:
             self._keyboard_controller = Controller()
 
         keyboard = self._keyboard_controller
-        with keyboard.pressed(Key.ctrl_l):
+        paste_modifier = getattr(Key, self._paste_modifier_attr())
+        with keyboard.pressed(paste_modifier):
             keyboard.press("v")
             keyboard.release("v")
+
+    def _paste_modifier_attr(self) -> str:
+        return "cmd" if sys.platform == "darwin" else "ctrl_l"
 
 
 class POINT(ctypes.Structure):
