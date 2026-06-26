@@ -35,7 +35,7 @@ class SystemActionsTests(unittest.TestCase):
 
         self.assertEqual(user32.restored, [1234])
 
-    def test_paste_restores_window_then_invokes_sender(self):
+    def test_paste_uses_current_input_without_restoring_remembered_window(self):
         user32 = FakeUser32()
         calls = []
         actions = SystemActions(
@@ -47,7 +47,7 @@ class SystemActionsTests(unittest.TestCase):
         actions.remember_active_window()
         actions.paste_into_active_input("typed text")
 
-        self.assertEqual(user32.restored, [1234])
+        self.assertEqual(user32.restored, [])
         self.assertEqual(calls, ["typed text"])
 
     def test_paste_copies_text_then_sends_ctrl_v_when_sender_is_not_injected(self):

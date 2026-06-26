@@ -81,8 +81,6 @@ class SystemActions:
             raise RuntimeError("Could not write to clipboard.") from exc
 
     def paste_into_active_input(self, text: str = "") -> None:
-        self.restore_active_window()
-        self._sleep(0.18)
         if self._paste_sender is not None:
             self._paste_sender(text)
             return
@@ -217,6 +215,9 @@ class SystemActions:
         user32.keybd_event(vk_v, 0, 0, 0)
         user32.keybd_event(vk_v, 0, 0x0002, 0)
         user32.keybd_event(vk_control, 0, 0x0002, 0)
+
+    def release_hotkey_modifiers(self) -> None:
+        self._release_hotkey_modifiers()
 
     def _release_hotkey_modifiers(self) -> None:
         user32 = self._get_user32()

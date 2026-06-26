@@ -220,8 +220,10 @@ class SpeechApp:
         if self.recorder.is_recording or self.transcribing:
             return
         try:
-            self.system.remember_active_window()
             self.recorder.start()
+            if self.hotkey_listener is not None:
+                self.hotkey_listener.ignore_releases_for(0.2)
+            self.system.release_hotkey_modifiers()
             self.overlay.show_recording()
         except Exception as exc:
             self.last_error = str(exc)

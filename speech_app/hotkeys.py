@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -11,6 +12,8 @@ class HotkeyState:
     on_stop: Callable[[], None]
     pressed_keys: set[str] = field(default_factory=set)
     active: bool = False
+    now: Callable[[], float] = time.monotonic
+    ignore_releases_until: float = 0.0
 
     def press(self, key: str) -> None:
         self.pressed_keys.add(key)
@@ -19,10 +22,18 @@ class HotkeyState:
             self.on_start()
 
     def release(self, key: str) -> None:
+        if key in self.required_keys and self.now() < self.ignore_releases_until:
+            return
         self.pressed_keys.discard(key)
         if self.active and not self.required_keys.issubset(self.pressed_keys):
             self.active = False
             self.on_stop()
+
+    def ignore_releases_for(self, seconds: float) -> None:
+        self.ignore_releases_until = max(
+            self.ignore_releases_until,
+            self.now() + seconds,
+        )
 
 
 def parse_hotkey(value: str) -> set[str]:
@@ -77,6 +88,9 @@ class GlobalHotkeyListener:
         if self.listener is not None:
             self.listener.stop()
             self.listener = None
+
+    def ignore_releases_for(self, seconds: float) -> None:
+        self.state.ignore_releases_for(seconds)
 
 
 def _normalize_key(key) -> str:
