@@ -9,6 +9,7 @@ use std::process::Command;
 #[serde(rename_all = "camelCase")]
 struct AppSnapshot {
     running: bool,
+    model_runtime_state: String,
     model_installed: bool,
     model_size_label: String,
     model_snapshot: String,
@@ -29,16 +30,38 @@ fn app_snapshot() -> Result<AppSnapshot, String> {
     let status = speech_status().unwrap_or_default();
     let root = speech_root();
     let (model_installed, model_snapshot, model_size_label) = model_status(&root);
+    let running = status.contains("speech_app run");
+    let model_runtime_state = if running {
+        read_model_runtime_state(&root)
+    } else {
+        "stopped".to_string()
+    };
     let history = read_history(usize::MAX)?;
 
     Ok(AppSnapshot {
-        running: status.contains("speech_app run"),
+        running,
+        model_runtime_state,
         model_installed,
         model_size_label,
         model_snapshot,
         history_count: history.len(),
         speech_root: root.display().to_string(),
     })
+}
+
+fn read_model_runtime_state(root: &Path) -> String {
+    let path = root.join("data").join("runtime_state.json");
+    let Ok(content) = fs::read_to_string(path) else {
+        return "unknown".to_string();
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&content) else {
+        return "unknown".to_string();
+    };
+    value["model_state"]
+        .as_str()
+        .filter(|state| !state.trim().is_empty())
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 #[tauri::command]

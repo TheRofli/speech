@@ -890,12 +890,17 @@ class SpeechWindow:
     def _refresh(self) -> None:
         status_text = self.app.status_text()
         status_lower = status_text.lower()
+        loading = "parakeet loading" in status_lower
         loaded = "parakeet loaded" in status_lower and "unloaded" not in status_lower
         self.status_var.set(status_text)
-        self.status_headline_var.set("Ready" if loaded else "Stopped")
+        self.status_headline_var.set(
+            "Loading" if loading else ("Ready" if loaded else "Stopped")
+        )
         model = self.app.model_status()
-        self.model_var.set(model.label)
-        self.side_model_var.set(model.size_label if model.installed else "missing")
+        self.model_var.set("Loading..." if loading else model.label)
+        self.side_model_var.set(
+            "loading..." if loading else (model.size_label if model.installed else "missing")
+        )
         if model.path is None:
             self.model_path_var.set("Run speech parakeet install to download the model.")
         else:
@@ -910,10 +915,12 @@ class SpeechWindow:
         self.device_var.set(str(values["device"]).upper())
         engine = "on" if values["engine_enabled"] else "off"
         self.status_headline_var.set(
-            "Off" if not values["engine_enabled"] else ("Ready" if loaded else "Stopped")
+            "Off"
+            if not values["engine_enabled"]
+            else ("Loading" if loading else ("Ready" if loaded else "Stopped"))
         )
         self.status_detail_var.set(
-            f"Engine {engine} - Parakeet {'loaded' if loaded else 'unloaded'} - {values['device']}"
+            f"Engine {engine} - Parakeet {'loading' if loading else ('loaded' if loaded else 'unloaded')} - {values['device']}"
         )
         self.mode_var.set(
             "Push-to-talk dictation - "

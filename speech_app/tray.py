@@ -17,6 +17,7 @@ class TrayApp(Protocol):
     def current_device(self) -> str: ...
     def current_backend(self) -> str: ...
     def model_loaded(self) -> bool: ...
+    def model_is_loading(self) -> bool: ...
 
 
 class TrayController:
@@ -48,12 +49,20 @@ class TrayController:
             item(
                 "Load Parakeet",
                 self.app.load_model_background,
-                enabled=lambda _: not self.app.model_loaded(),
+                enabled=lambda _: not self.app.model_loaded()
+                and not self.app.model_is_loading(),
+            ),
+            item(
+                "Loading Parakeet...",
+                lambda: None,
+                enabled=False,
+                visible=lambda _: self.app.model_is_loading(),
             ),
             item(
                 "Unload Parakeet",
                 self.app.unload_model,
-                enabled=lambda _: self.app.model_loaded(),
+                enabled=lambda _: self.app.model_loaded()
+                and not self.app.model_is_loading(),
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(

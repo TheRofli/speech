@@ -5,6 +5,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 
+_WIN_VK_CODES = {0x5B, 0x5C}
+_WIN32_PRESS_MESSAGES = {0x0100, 0x0104}
+_WIN32_RELEASE_MESSAGES = {0x0101, 0x0105}
+_WIN32_INJECTED_FLAGS = 0x00000010 | 0x00000002
+
+
 @dataclass
 class HotkeyState:
     required_keys: set[str]
@@ -66,6 +72,7 @@ class GlobalHotkeyListener:
         )
         self.suppress = suppress
         self.listener = None
+        self._suppress_win_release = False
 
     def start(self) -> None:
         if self.listener is not None:
@@ -78,9 +85,10 @@ class GlobalHotkeyListener:
             ) from exc
 
         self.listener = keyboard.Listener(
-            on_press=lambda key: self.state.press(_normalize_key(key)),
-            on_release=lambda key: self.state.release(_normalize_key(key)),
+            on_press=self._on_press,
+            on_release=self._on_release,
             suppress=self.suppress,
+            win32_event_filter=self._win32_event_filter,
         )
         self.listener.start()
 
@@ -91,6 +99,68 @@ class GlobalHotkeyListener:
 
     def ignore_releases_for(self, seconds: float) -> None:
         self.state.ignore_releases_for(seconds)
+
+    def _on_press(self, key, injected: bool = False) -> None:
+        normalized = _normalize_key(key)
+        if injected and normalized in self.state.required_keys:
+            return
+        self.state.press(normalized)
+        if (
+            normalized != "win"
+            and "win" in self.state.required_keys
+            and self.state.active
+            and "win" in self.state.pressed_keys
+        ):
+            self._suppress_win_release = True
+
+    def _on_release(self, key, injected: bool = False) -> None:
+        normalized = _normalize_key(key)
+        if injected and normalized in self.state.required_keys:
+            return
+        self.state.release(normalized)
+
+    def _win32_event_filter(self, msg: int, data) -> bool:
+        if "win" not in self.state.required_keys:
+            return True
+        if getattr(data, "vkCode", None) not in _WIN_VK_CODES:
+            return True
+
+        injected = bool(getattr(data, "flags", 0) & _WIN32_INJECTED_FLAGS)
+        if injected:
+            self._suppress_current_event()
+            return False
+
+        if msg in _WIN32_PRESS_MESSAGES:
+            if self._other_required_keys_are_pressed():
+                self.state.press("win")
+                self._suppress_win_release = True
+                self._suppress_current_event()
+                return False
+            return True
+
+        if msg in _WIN32_RELEASE_MESSAGES:
+            if (
+                self._suppress_win_release
+                or self.state.active
+                or self._other_required_keys_are_pressed()
+            ):
+                self.state.release("win")
+                self._suppress_win_release = False
+                self._suppress_current_event()
+                return False
+            return True
+
+        return True
+
+    def _other_required_keys_are_pressed(self) -> bool:
+        return all(
+            key == "win" or key in self.state.pressed_keys
+            for key in self.state.required_keys
+        )
+
+    def _suppress_current_event(self) -> None:
+        if self.listener is not None and hasattr(self.listener, "suppress_event"):
+            self.listener.suppress_event()
 
 
 def _normalize_key(key) -> str:

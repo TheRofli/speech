@@ -5,6 +5,7 @@ from pathlib import Path
 
 from speech_app.history import TranscriptHistory
 from speech_app.output import TranscriptPublisher
+from speech_app.runtime_state import write_runtime_state
 from speech_app.settings import AppSettings, SettingsStore
 
 
@@ -105,6 +106,24 @@ class TranscriptPublisherTests(unittest.TestCase):
             self.assertIsNone(entry)
             self.assertEqual(clipboard, [])
             self.assertEqual(history.list(), [])
+
+
+class RuntimeStateTests(unittest.TestCase):
+    def test_runtime_state_records_model_loading_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "runtime_state.json"
+
+            write_runtime_state(
+                "loading",
+                AppSettings(device="cpu", backend="auto"),
+                path=path,
+            )
+
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self.assertTrue(payload["running"])
+            self.assertEqual(payload["model_state"], "loading")
+            self.assertEqual(payload["device"], "cpu")
+            self.assertEqual(payload["backend"], "auto")
 
 
 if __name__ == "__main__":

@@ -65,8 +65,6 @@ class SystemActionsTests(unittest.TestCase):
         self.assertEqual(
             user32.key_events,
             [
-                (0x10, 0, 0, 0),
-                (0x10, 0, 0x0002, 0),
                 (0x5B, 0, 0x0002, 0),
                 (0x5C, 0, 0x0002, 0),
                 (0xA2, 0, 0x0002, 0),
@@ -79,21 +77,14 @@ class SystemActionsTests(unittest.TestCase):
             ],
         )
 
-    def test_release_hotkey_modifiers_marks_windows_key_as_chord_first(self):
+    def test_release_hotkey_modifiers_releases_win_and_ctrl_keys(self):
         user32 = FakeUser32()
         actions = SystemActions(user32=user32, sleep=lambda seconds: None)
 
         actions.release_hotkey_modifiers()
 
-        self.assertEqual(
-            user32.key_events[:4],
-            [
-                (0x10, 0, 0, 0),
-                (0x10, 0, 0x0002, 0),
-                (0x5B, 0, 0x0002, 0),
-                (0x5C, 0, 0x0002, 0),
-            ],
-        )
+        self.assertEqual(user32.key_events[0], (0x5B, 0, 0x0002, 0))
+        self.assertEqual(user32.key_events[-1], (0x11, 0, 0x0002, 0))
 
     def test_open_tauri_ui_prefers_release_executable(self):
         with TemporaryDirectory() as tmp:

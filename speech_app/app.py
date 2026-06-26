@@ -20,6 +20,7 @@ from .overlay import VoiceOverlay
 from .parakeet_engine import EngineUnavailable, ParakeetEngine
 from .portable import build_portable_env
 from .resources import ProcessResourceMonitor, ResourceSnapshot
+from .runtime_state import write_runtime_state
 from .settings import AppSettings, SettingsStore
 from .settings import default_data_dir
 from .single_instance import SingleInstanceLock
@@ -63,7 +64,9 @@ class SpeechApp:
         )
         self.hotkey_listener: GlobalHotkeyListener | None = None
         self.transcribing = False
+        self.model_loading = False
         self.last_error = ""
+        self._write_runtime_state("unloaded")
 
     def run(self, show_window: bool = False) -> None:
         self.root.after(30, self._pump_ui_queue)
@@ -113,13 +116,22 @@ class SpeechApp:
 
     def load_model_background(self) -> None:
         if self.engine.is_loaded:
+            self.model_loading = False
+            self._write_runtime_state("loaded")
             self.post_ui(lambda: self._model_state_changed("Parakeet loaded"))
             return
-        self.post_ui(lambda: self.overlay.show_transcribing())
+        if self.model_loading:
+            self.post_ui(lambda: self._model_state_changed("Parakeet loading"))
+            return
+        self.model_loading = True
+        self._write_runtime_state("loading")
+        self.post_ui(lambda: self._model_state_changed("Parakeet loading"))
         threading.Thread(target=self._load_model_worker, daemon=True).start()
 
     def unload_model(self) -> None:
+        self.model_loading = False
         self.engine.unload()
+        self._write_runtime_state("unloaded")
         self.post_ui(lambda: self._model_state_changed("Parakeet unloaded"))
 
     def set_device(self, device: str) -> None:
@@ -144,10 +156,13 @@ class SpeechApp:
     def model_loaded(self) -> bool:
         return self.engine.is_loaded
 
+    def model_is_loading(self) -> bool:
+        return self.model_loading
+
     def status_text(self) -> str:
         engine = "on" if self.settings.engine_enabled else "off"
-        loaded = "loaded" if self.engine.is_loaded else "unloaded"
-        return f"Engine {engine} | Parakeet {loaded} | {self.settings.device}"
+        state = self._model_state_label()
+        return f"Engine {engine} | Parakeet {state} | {self.settings.device}"
 
     def get_settings_values(self) -> dict[str, object]:
         return {
@@ -189,7 +204,9 @@ class SpeechApp:
     def _quit_ui(self) -> None:
         if self.hotkey_listener is not None:
             self.hotkey_listener.stop()
+        self.model_loading = False
         self.engine.unload()
+        self._write_runtime_state("unloaded", running=False)
         self.tray.stop()
         self.root.quit()
         self.root.destroy()
@@ -222,8 +239,6 @@ class SpeechApp:
             return
         try:
             self.recorder.start()
-            if self.hotkey_listener is not None:
-                self.hotkey_listener.ignore_releases_for(0.2)
             self.system.release_hotkey_modifiers()
             self.overlay.show_recording()
         except Exception as exc:
@@ -248,14 +263,49 @@ class SpeechApp:
             self.engine.load(self.settings)
         except Exception as exc:
             self.last_error = str(exc)
-            self.post_ui(lambda: self._show_error("Parakeet load failed", exc))
+            self.post_ui(lambda: self._model_load_failed(exc))
             return
-        self.post_ui(lambda: self._model_state_changed("Parakeet loaded"))
+        self.post_ui(self._model_load_succeeded)
+
+    def _model_load_succeeded(self) -> None:
+        self.model_loading = False
+        self._write_runtime_state("loaded")
+        self._model_state_changed("Parakeet loaded")
+
+    def _model_load_failed(self, exc: Exception) -> None:
+        self.model_loading = False
+        self._write_runtime_state("error", last_error=str(exc))
+        self.window.refresh()
+        self.tray.refresh_menu()
+        self._show_error("Parakeet load failed", exc)
 
     def _model_state_changed(self, notice: str) -> None:
         self.window.refresh()
         self.tray.refresh_menu()
         self.overlay.show_notice(notice)
+
+    def _model_state_label(self) -> str:
+        if self.model_loading:
+            return "loading"
+        if self.engine.is_loaded:
+            return "loaded"
+        return "unloaded"
+
+    def _write_runtime_state(
+        self,
+        model_state: str,
+        running: bool = True,
+        last_error: str = "",
+    ) -> None:
+        try:
+            write_runtime_state(
+                model_state=model_state,
+                settings=self.settings,
+                running=running,
+                last_error=last_error,
+            )
+        except Exception:
+            pass
 
     def _transcribe_worker(
         self, samples, sample_rate: int, settings_snapshot: AppSettings

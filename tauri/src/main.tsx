@@ -5,6 +5,7 @@ import "./styles.css";
 
 type AppSnapshot = {
   running: boolean;
+  modelRuntimeState: string;
   modelInstalled: boolean;
   modelSizeLabel: string;
   modelSnapshot: string;
@@ -23,6 +24,7 @@ type ActionCommand = "speech_status" | "speech_diagnose" | "speech_restart" | "s
 
 const emptySnapshot: AppSnapshot = {
   running: false,
+  modelRuntimeState: "stopped",
   modelInstalled: false,
   modelSizeLabel: "Not installed",
   modelSnapshot: "",
@@ -119,7 +121,8 @@ function App() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const statusText = snapshot.running ? "Ready" : "Stopped";
+  const modelRuntimeState = snapshot.modelRuntimeState || "unknown";
+  const statusText = getStatusText(snapshot.running, modelRuntimeState);
   const selected = history.find((item) => item.id === selectedId) || history[0];
   const latest = history[0];
   const filteredHistory = useMemo(() => {
@@ -148,8 +151,20 @@ function App() {
         </nav>
         <div className="model-ticket">
           <span>Parakeet</span>
-          <strong>{snapshot.modelInstalled ? snapshot.modelSizeLabel : "missing"}</strong>
-          <small>{snapshot.modelSnapshot ? shortHash(snapshot.modelSnapshot) : "local model"}</small>
+          <strong>
+            {modelRuntimeState === "loading"
+              ? "loading..."
+              : snapshot.modelInstalled
+                ? snapshot.modelSizeLabel
+                : "missing"}
+          </strong>
+          <small>
+            {modelRuntimeState === "loading"
+              ? "starting Parakeet"
+              : snapshot.modelSnapshot
+                ? shortHash(snapshot.modelSnapshot)
+                : "local model"}
+          </small>
         </div>
       </aside>
 
@@ -160,7 +175,7 @@ function App() {
             <h1>{statusText}</h1>
           </div>
           <div className="topbar-actions">
-            <StatusPill running={snapshot.running} />
+            <StatusPill running={snapshot.running} modelState={modelRuntimeState} />
             <button className="ghost-button" onClick={() => refresh()} disabled={busy}>
               Refresh
             </button>
@@ -229,11 +244,12 @@ function Brand() {
   );
 }
 
-function StatusPill({ running }: { running: boolean }) {
+function StatusPill({ running, modelState }: { running: boolean; modelState: string }) {
+  const loading = running && modelState === "loading";
   return (
-    <div className={running ? "status-pill running" : "status-pill"}>
+    <div className={loading ? "status-pill loading" : running ? "status-pill running" : "status-pill"}>
       <span />
-      {running ? "Running" : "Off"}
+      {loading ? "Loading" : running ? "Running" : "Off"}
     </div>
   );
 }
@@ -270,7 +286,15 @@ function Overview({
 
       <section className="stat-grid">
         <Metric title="Runtime" value={statusText} detail={snapshot.speechRoot} />
-        <Metric title="Model" value={snapshot.modelSizeLabel} detail={snapshot.modelSnapshot || "Install Parakeet"} />
+        <Metric
+          title="Model"
+          value={snapshot.modelRuntimeState === "loading" ? "Loading" : snapshot.modelSizeLabel}
+          detail={
+            snapshot.modelRuntimeState === "loading"
+              ? "Starting Parakeet"
+              : snapshot.modelSnapshot || "Install Parakeet"
+          }
+        />
         <Metric title="History" value={String(snapshot.historyCount)} detail="local transcripts" />
         <Metric title="Device" value="CPU" detail="stable default" />
       </section>
@@ -310,7 +334,10 @@ function Controls({
             control surface for status, diagnostics, restarts, and history.
           </p>
         </div>
-        <StatusPill running={snapshot.running} />
+        <StatusPill
+          running={snapshot.running}
+          modelState={snapshot.modelRuntimeState || "unknown"}
+        />
       </article>
 
       <section className="control-grid">
@@ -577,6 +604,22 @@ function formatTime(value: string) {
 
 function shortHash(value: string) {
   return value.length > 10 ? `${value.slice(0, 10)}...` : value;
+}
+
+function getStatusText(running: boolean, modelState: string) {
+  if (!running) {
+    return "Stopped";
+  }
+  if (modelState === "loading") {
+    return "Loading Parakeet";
+  }
+  if (modelState === "loaded") {
+    return "Ready";
+  }
+  if (modelState === "error") {
+    return "Needs attention";
+  }
+  return "Running";
 }
 
 function getInitialTab(): Tab {

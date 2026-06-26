@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from speech_app.app import SpeechApp
 from speech_app.settings import AppSettings
@@ -87,11 +88,23 @@ class FakeRoot:
 
 
 class FakeEngine:
-    def __init__(self) -> None:
+    def __init__(self, is_loaded: bool = False) -> None:
+        self.is_loaded = is_loaded
         self.unload_count = 0
 
     def unload(self) -> None:
         self.unload_count += 1
+
+
+class FakeThread:
+    def __init__(self, target, daemon: bool = False, args=()) -> None:
+        self.target = target
+        self.daemon = daemon
+        self.args = args
+        self.started = False
+
+    def start(self) -> None:
+        self.started = True
 
 
 class AppStateTests(unittest.TestCase):
@@ -121,7 +134,7 @@ class AppStateTests(unittest.TestCase):
 
         self.assertEqual(app.system.remember_count, 0)
         self.assertEqual(app.system.release_count, 1)
-        self.assertEqual(app.hotkey_listener.ignore_windows, [0.2])
+        self.assertEqual(app.hotkey_listener.ignore_windows, [])
         self.assertEqual(app.recorder.start_count, 1)
         self.assertEqual(app.overlay.recording_count, 1)
 
@@ -139,6 +152,43 @@ class AppStateTests(unittest.TestCase):
         self.assertEqual(app.tray.stop_count, 1)
         self.assertEqual(app.root.quit_count, 1)
         self.assertEqual(app.root.destroy_count, 1)
+
+    def test_status_text_reports_loading_while_model_loads(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.settings = AppSettings()
+        app.engine = FakeEngine(is_loaded=False)
+        app.model_loading = True
+
+        self.assertIn("Parakeet loading", app.status_text())
+
+    def test_load_model_background_marks_loading_before_worker_starts(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.settings = AppSettings()
+        app.engine = FakeEngine(is_loaded=False)
+        app.model_loading = False
+        app.posted_callbacks = []
+        app.post_ui = app.posted_callbacks.append
+        app._write_runtime_state = lambda *_args, **_kwargs: None
+
+        with patch("speech_app.app.threading.Thread", FakeThread):
+            app.load_model_background()
+
+        self.assertTrue(app.model_loading)
+        self.assertIn("Parakeet loading", app.status_text())
+        self.assertEqual(len(app.posted_callbacks), 1)
+
+    def test_load_model_background_does_not_start_duplicate_worker_while_loading(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.settings = AppSettings()
+        app.engine = FakeEngine(is_loaded=False)
+        app.model_loading = True
+        app.posted_callbacks = []
+        app.post_ui = app.posted_callbacks.append
+
+        with patch("speech_app.app.threading.Thread") as thread_cls:
+            app.load_model_background()
+
+        thread_cls.assert_not_called()
 
 
 if __name__ == "__main__":
