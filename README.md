@@ -4,8 +4,8 @@ Speech is a local push-to-talk dictation app. Hold a hotkey, speak, release,
 and the transcript is pasted into the active input, copied to the clipboard,
 and saved in searchable local history.
 
-Speech runs locally on your machine. Audio and transcripts are not sent to an
-online speech service.
+Speech recognition runs locally on your machine. Optional transcript cleanup
+can stay local with SAGE or use an OpenAI-compatible API that you configure.
 
 ## Quick Install
 
@@ -111,6 +111,40 @@ Sources:
 - [NVIDIA Parakeet TDT 0.6B v3 model card](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
 - [NVIDIA NeMo ASR collection](https://docs.nvidia.com/nemo-framework/user-guide/latest/nemotoolkit/asr/intro.html)
 
+## Optional AI Cleanup
+
+Speech has three cleanup modes:
+
+- `Off`: publish the Parakeet transcript unchanged.
+- `Local`: correct Russian spelling, punctuation, and casing on CPU with
+  `ai-forever/sage-fredt5-distilled-95m`.
+- `API`: send transcript text to a configurable OpenAI-compatible endpoint.
+
+Install the optional local corrector:
+
+```powershell
+speech ai install
+```
+
+SAGE is a 95.6M-parameter Russian correction model released under MIT. Its
+checkpoint is about 383 MB. Speech keeps both the original and corrected text
+in local history and rejects suspicious corrections that lose numbers, URLs,
+email addresses, acronyms, or too much content.
+
+API keys are stored through Windows Credential Manager or macOS Keychain, not
+in `settings.json`:
+
+```text
+speech ai key set
+speech ai key status
+speech ai key delete
+```
+
+Sources:
+
+- [SAGE distilled 95M model card](https://huggingface.co/ai-forever/sage-fredt5-distilled-95m)
+- [SAGE project](https://github.com/ai-forever/sage)
+
 ## Requirements
 
 Minimum practical setup:
@@ -152,6 +186,9 @@ Workflow:
 4. Speech transcribes locally, then sends text to the active input, clipboard,
    and local history.
 
+When cleanup is enabled, the overlay changes from transcription dots to pink
+cleanup dots before insertion. Any cleanup failure publishes the original text.
+
 The tray menu lets you open the window, copy the last transcript, load/unload
 Parakeet, switch CPU/CUDA mode, and quit.
 
@@ -167,6 +204,8 @@ speech restart
 speech open
 speech diagnose
 speech parakeet install
+speech ai install
+speech ai key set
 speech foreground
 ```
 
@@ -179,6 +218,8 @@ speech stop
 speech restart
 speech diagnose
 speech parakeet install
+speech ai install
+speech ai key set
 speech foreground
 ```
 
@@ -197,8 +238,9 @@ tmp/        temporary audio files
 .venv/      local Python virtual environment
 ```
 
-No audio or transcript data is uploaded by the app. Hugging Face is contacted
-only when downloading the model.
+Audio is never uploaded by Speech. In `Off` and `Local` modes, transcripts stay
+on the device. In `API` mode, transcript text is sent to the endpoint configured
+in the Controls tab. Hugging Face is contacted only when downloading models.
 
 ## Development
 

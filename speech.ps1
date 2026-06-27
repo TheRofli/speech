@@ -285,6 +285,15 @@ switch ($command) {
         Invoke-SpeechPython $argsForPython
         exit $LASTEXITCODE
     }
+    "ai" {
+        if ($tail.Count -eq 0) {
+            Write-Host "Usage: speech ai install | speech ai key set|status|delete"
+            exit 1
+        }
+        $argsForPython = @("ai") + $tail
+        Invoke-SpeechPython $argsForPython
+        exit $LASTEXITCODE
+    }
     "model" {
         if ($tail.Count -eq 1 -and $tail[0].ToLowerInvariant() -in @("install", "preload", "download")) {
             Invoke-SpeechPython @("parakeet", "install")

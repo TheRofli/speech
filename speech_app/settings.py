@@ -26,6 +26,12 @@ class AppSettings:
     sample_rate: int = 16000
     vad_sensitivity: float = 0.02
     history_limit: int = 100
+    ai_mode: str = "off"
+    ai_local_model_id: str = "ai-forever/sage-fredt5-distilled-95m"
+    ai_api_base_url: str = "https://api.openai.com/v1"
+    ai_api_model: str = ""
+    ai_timeout_seconds: float = 12.0
+    ai_local_max_chunk_chars: int = 320
 
 
 def default_data_dir() -> Path:

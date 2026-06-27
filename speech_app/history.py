@@ -14,6 +14,10 @@ class TranscriptEntry:
     id: str
     created_at: str
     text: str
+    original_text: str = ""
+    processing_mode: str = "off"
+    processing_status: str = "skipped"
+    processing_ms: int = 0
 
 
 class TranscriptHistory:
@@ -21,11 +25,23 @@ class TranscriptHistory:
         self.path = path or default_data_dir() / "history.jsonl"
         self.max_entries = max_entries
 
-    def add(self, text: str) -> TranscriptEntry:
+    def add(
+        self,
+        text: str,
+        *,
+        original_text: str | None = None,
+        processing_mode: str = "off",
+        processing_status: str = "skipped",
+        processing_ms: int = 0,
+    ) -> TranscriptEntry:
         entry = TranscriptEntry(
             id=str(uuid4()),
             created_at=datetime.now(timezone.utc).isoformat(),
             text=text,
+            original_text=original_text if original_text is not None else text,
+            processing_mode=processing_mode,
+            processing_status=processing_status,
+            processing_ms=processing_ms,
         )
         entries = [entry, *self.list()]
         self._write(entries[: self.max_entries])
@@ -41,8 +57,21 @@ class TranscriptHistory:
                 continue
             try:
                 payload = json.loads(line)
-                entries.append(TranscriptEntry(**payload))
-            except (TypeError, json.JSONDecodeError):
+                text = str(payload.get("text", ""))
+                entries.append(
+                    TranscriptEntry(
+                        id=str(payload["id"]),
+                        created_at=str(payload["created_at"]),
+                        text=text,
+                        original_text=str(payload.get("original_text") or text),
+                        processing_mode=str(payload.get("processing_mode", "off")),
+                        processing_status=str(
+                            payload.get("processing_status", "skipped")
+                        ),
+                        processing_ms=int(payload.get("processing_ms", 0)),
+                    )
+                )
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                 continue
         return entries[: self.max_entries]
 
@@ -52,4 +81,3 @@ class TranscriptHistory:
             json.dumps(asdict(entry), ensure_ascii=False) for entry in entries
         )
         self.path.write_text(data + ("\n" if data else ""), encoding="utf-8")
-

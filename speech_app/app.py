@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import importlib.util
 import os
 import queue
@@ -18,11 +19,13 @@ from .model_status import ModelStatus, find_model_status
 from .output import TranscriptPublisher
 from .overlay import VoiceOverlay
 from .parakeet_engine import EngineUnavailable, ParakeetEngine
+from .postprocess import CorrectionResult, TranscriptPostProcessor
 from .portable import build_portable_env
 from .resources import ProcessResourceMonitor, ResourceSnapshot
 from .runtime_state import write_runtime_state
 from .settings import AppSettings, SettingsStore
 from .settings import default_data_dir
+from .secrets import SecretStore
 from .single_instance import SingleInstanceLock
 from .system import SystemActions
 from .tray import TrayController
@@ -52,6 +55,7 @@ class SpeechApp:
             paste_active_input=self.system.paste_into_active_input,
         )
         self.engine = ParakeetEngine()
+        self.postprocessor = TranscriptPostProcessor()
         self.resource_monitor = ProcessResourceMonitor()
         self.overlay = VoiceOverlay(self.root)
         self.window = SpeechWindow(self.root, self)
@@ -131,6 +135,7 @@ class SpeechApp:
     def unload_model(self) -> None:
         self.model_loading = False
         self.engine.unload()
+        self.postprocessor.unload()
         self._write_runtime_state("unloaded")
         self.post_ui(lambda: self._model_state_changed("Parakeet unloaded"))
 
@@ -173,6 +178,11 @@ class SpeechApp:
             "device": self.settings.device,
             "backend": self.settings.backend,
             "hotkey": self.settings.hotkey,
+            "ai_mode": self.settings.ai_mode,
+            "ai_local_model_id": self.settings.ai_local_model_id,
+            "ai_api_base_url": self.settings.ai_api_base_url,
+            "ai_api_model": self.settings.ai_api_model,
+            "ai_timeout_seconds": self.settings.ai_timeout_seconds,
         }
 
     def save_settings_values(self, values: dict[str, object]) -> None:
@@ -184,6 +194,19 @@ class SpeechApp:
         self.settings.device = str(values["device"])
         self.settings.backend = str(values["backend"])
         self.settings.hotkey = str(values["hotkey"])
+        self.settings.ai_mode = str(values.get("ai_mode", self.settings.ai_mode))
+        self.settings.ai_local_model_id = str(
+            values.get("ai_local_model_id", self.settings.ai_local_model_id)
+        )
+        self.settings.ai_api_base_url = str(
+            values.get("ai_api_base_url", self.settings.ai_api_base_url)
+        )
+        self.settings.ai_api_model = str(
+            values.get("ai_api_model", self.settings.ai_api_model)
+        )
+        self.settings.ai_timeout_seconds = float(
+            values.get("ai_timeout_seconds", self.settings.ai_timeout_seconds)
+        )
         self.settings_store.save(self.settings)
         if self.settings.hotkey != previous_hotkey:
             self._restart_hotkeys()
@@ -206,6 +229,7 @@ class SpeechApp:
             self.hotkey_listener.stop()
         self.model_loading = False
         self.engine.unload()
+        self.postprocessor.unload()
         self._write_runtime_state("unloaded", running=False)
         self.tray.stop()
         self.root.quit()
@@ -265,6 +289,10 @@ class SpeechApp:
             self.last_error = str(exc)
             self.post_ui(lambda: self._model_load_failed(exc))
             return
+        try:
+            self.postprocessor.load(self.settings)
+        except Exception as exc:
+            self.last_error = f"AI correction unavailable: {exc}"
         self.post_ui(self._model_load_succeeded)
 
     def _model_load_succeeded(self) -> None:
@@ -303,9 +331,18 @@ class SpeechApp:
                 settings=self.settings,
                 running=running,
                 last_error=last_error,
+                ai_state=self._ai_state_label(),
             )
         except Exception:
             pass
+
+    def _ai_state_label(self) -> str:
+        mode = self.settings.ai_mode.lower()
+        if mode == "off":
+            return "off"
+        if mode == "local":
+            return "loaded" if self.postprocessor.local_corrector.is_loaded else "unloaded"
+        return "configured" if mode == "api" else "error"
 
     def _transcribe_worker(
         self, samples, sample_rate: int, settings_snapshot: AppSettings
@@ -314,31 +351,55 @@ class SpeechApp:
             text = self.engine.transcribe(samples, sample_rate, settings_snapshot)
         except EngineUnavailable as exc:
             self.last_error = str(exc)
+            self.post_ui(lambda: setattr(self, "transcribing", False))
             self.post_ui(lambda: self._show_error("Parakeet unavailable", exc))
             return
         except Exception as exc:
             self.last_error = traceback.format_exc()
+            self.post_ui(lambda: setattr(self, "transcribing", False))
             self.post_ui(lambda: self._show_error("Transcription failed", exc))
             return
-        finally:
-            self.post_ui(lambda: setattr(self, "transcribing", False))
+        if settings_snapshot.ai_mode.lower() != "off":
+            self.post_ui(self.overlay.show_cleaning)
+        result = self.postprocessor.process(text, settings_snapshot)
+        self.post_ui(lambda: setattr(self, "transcribing", False))
+        self.post_ui(lambda result=result: self._publish_correction(result, settings_snapshot))
 
-        self.post_ui(lambda: self._publish_transcript(text, settings_snapshot))
+    def _publish_correction(
+        self, result: CorrectionResult, settings_snapshot: AppSettings
+    ) -> None:
+        self.overlay.hide()
+        self.root.after(
+            140,
+            lambda: self._publish_correction_after_focus(result, settings_snapshot),
+        )
+
+    def _publish_correction_after_focus(
+        self, result: CorrectionResult, settings_snapshot: AppSettings
+    ) -> None:
+        entry = self.publisher.publish(
+            result.text,
+            settings_snapshot,
+            **result.history_metadata(),
+        )
+        if entry is None:
+            self.overlay.show_notice("No speech detected")
+        elif result.status in {"fallback", "rejected"}:
+            self.overlay.show_notice("Inserted original")
+        else:
+            self.overlay.show_notice("Inserted")
 
     def _publish_transcript(
         self, text: str, settings_snapshot: AppSettings
     ) -> None:
-        self.overlay.hide()
-        self.root.after(140, lambda: self._publish_transcript_after_focus(text, settings_snapshot))
+        result = CorrectionResult(text, text, "off", "skipped", 0)
+        self._publish_correction(result, settings_snapshot)
 
     def _publish_transcript_after_focus(
         self, text: str, settings_snapshot: AppSettings
     ) -> None:
-        entry = self.publisher.publish(text, settings_snapshot)
-        if entry is None:
-            self.overlay.show_notice("No speech detected")
-        else:
-            self.overlay.show_notice("Inserted")
+        result = CorrectionResult(text, text, "off", "skipped", 0)
+        self._publish_correction_after_focus(result, settings_snapshot)
 
     def _show_error(self, title: str, exc: Exception) -> None:
         message = str(exc)
@@ -404,6 +465,35 @@ def install_parakeet_model(model_id: str | None = None) -> int:
     return 0
 
 
+def install_ai_model(model_id: str | None = None) -> int:
+    model_id = model_id or AppSettings().ai_local_model_id
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        print("huggingface_hub is not installed. Run: speech install")
+        return 1
+
+    print(f"Downloading {model_id} into the configured Hugging Face cache...")
+    path = snapshot_download(repo_id=model_id)
+    print(f"Local AI corrector is ready at: {path}")
+    return 0
+
+
+def manage_api_key(command: str, read_stdin: bool = False) -> int:
+    store = SecretStore()
+    if command == "status":
+        print("API key configured." if store.get_api_key() else "API key not configured.")
+        return 0
+    if command == "delete":
+        store.delete_api_key()
+        print("API key removed from secure storage.")
+        return 0
+    value = sys.stdin.read().strip() if read_stdin else getpass.getpass("API key: ")
+    store.set_api_key(value)
+    print("API key saved in secure system storage.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="speech")
     parser.add_argument(
@@ -426,6 +516,15 @@ def build_parser() -> argparse.ArgumentParser:
         "install",
         help="Download Parakeet into the configured local model cache.",
     )
+    ai = subparsers.add_parser("ai", help="Manage transcript correction.")
+    ai_sub = ai.add_subparsers(dest="ai_command")
+    ai_sub.add_parser("install", help="Download the local SAGE corrector.")
+    key = ai_sub.add_parser("key", help="Manage the API key in secure storage.")
+    key_sub = key.add_subparsers(dest="ai_key_command")
+    key_set = key_sub.add_parser("set", help="Save the API key securely.")
+    key_set.add_argument("--stdin", action="store_true", help=argparse.SUPPRESS)
+    key_sub.add_parser("status", help="Check whether an API key is configured.")
+    key_sub.add_parser("delete", help="Delete the saved API key.")
     return parser
 
 
@@ -452,6 +551,17 @@ def main(argv: list[str] | None = None) -> int:
         return install_parakeet_model()
     if args.command == "parakeet":
         parser.error("Choose a Parakeet command, for example: speech parakeet install")
+    if args.command == "ai" and args.ai_command == "install":
+        return install_ai_model()
+    if args.command == "ai" and args.ai_command == "key":
+        if not args.ai_key_command:
+            parser.error("Choose: speech ai key set, status, or delete")
+        return manage_api_key(
+            args.ai_key_command,
+            read_stdin=bool(getattr(args, "stdin", False)),
+        )
+    if args.command == "ai":
+        parser.error("Choose an AI command, for example: speech ai install")
 
     lock = SingleInstanceLock(default_data_dir() / "speech.lock")
     if not lock.acquire():

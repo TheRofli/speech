@@ -51,6 +51,11 @@ class VoiceOverlay:
         self.message = ""
         self._show()
 
+    def show_cleaning(self) -> None:
+        self.mode = "cleaning"
+        self.message = ""
+        self._show()
+
     def show_notice(self, message: str, timeout_ms: int = 1400) -> None:
         self.mode = "notice"
         self.message = message
@@ -111,7 +116,7 @@ class VoiceOverlay:
 
     def _draw_wave_pill(self) -> None:
         pill_fill = "#ffffff"
-        if self.mode == "transcribing":
+        if self.mode in {"transcribing", "cleaning"}:
             pill_fill = "#f8f8f7"
         self._rounded_rect(24, 10, 146, 54, 22, fill=pill_fill, outline="#e5e1ea")
 
@@ -125,7 +130,7 @@ class VoiceOverlay:
             )
             return
 
-        if self.mode == "transcribing":
+        if self.mode in {"transcribing", "cleaning"}:
             self._draw_loading_dots()
             return
 
@@ -154,7 +159,8 @@ class VoiceOverlay:
         tick = int(time.time() * 8) % 6
         for index in range(6):
             radius = 3 if index == tick else 2
-            color = "#17151b" if index == tick else "#c8bdd4"
+            active = "#e95c9b" if self.mode == "cleaning" else "#17151b"
+            color = active if index == tick else "#c8bdd4"
             x = 64 + index * 8
             self.canvas.create_oval(
                 x - radius,

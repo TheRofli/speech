@@ -4,3 +4,4 @@ pillow
 pystray
 pynput
 pyperclip
+keyring

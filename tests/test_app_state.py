@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from speech_app.app import SpeechApp
+from speech_app.postprocess import CorrectionResult
 from speech_app.settings import AppSettings
 
 
@@ -33,12 +34,16 @@ class FakeOverlay:
     def __init__(self) -> None:
         self.notices = []
         self.recording_count = 0
+        self.cleaning_count = 0
 
     def show_notice(self, message: str) -> None:
         self.notices.append(message)
 
     def show_recording(self) -> None:
         self.recording_count += 1
+
+    def show_cleaning(self) -> None:
+        self.cleaning_count += 1
 
 
 class FakeSystem:
@@ -95,6 +100,22 @@ class FakeEngine:
     def unload(self) -> None:
         self.unload_count += 1
 
+    def transcribe(self, samples, sample_rate, settings) -> str:
+        return "raw transcript"
+
+
+class FakePostProcessor:
+    def __init__(self) -> None:
+        self.unload_count = 0
+        self.process_calls = []
+
+    def unload(self) -> None:
+        self.unload_count += 1
+
+    def process(self, text, settings) -> CorrectionResult:
+        self.process_calls.append((text, settings))
+        return CorrectionResult(text, "corrected transcript", "local", "applied", 42)
+
 
 class FakeThread:
     def __init__(self, target, daemon: bool = False, args=()) -> None:
@@ -144,10 +165,12 @@ class AppStateTests(unittest.TestCase):
         app.tray = FakeTray()
         app.root = FakeRoot()
         app.engine = FakeEngine()
+        app.postprocessor = FakePostProcessor()
 
         app._quit_ui()
 
         self.assertEqual(app.engine.unload_count, 1)
+        self.assertEqual(app.postprocessor.unload_count, 1)
         self.assertEqual(app.hotkey_listener.stop_count, 1)
         self.assertEqual(app.tray.stop_count, 1)
         self.assertEqual(app.root.quit_count, 1)
@@ -189,6 +212,27 @@ class AppStateTests(unittest.TestCase):
             app.load_model_background()
 
         thread_cls.assert_not_called()
+
+    def test_transcribe_worker_corrects_before_publishing(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.engine = FakeEngine()
+        app.postprocessor = FakePostProcessor()
+        app.overlay = FakeOverlay()
+        app.transcribing = True
+        app.posted_callbacks = []
+        app.post_ui = app.posted_callbacks.append
+        published = []
+        app._publish_correction = lambda result, _settings: published.append(result)
+        settings = AppSettings(ai_mode="local")
+
+        app._transcribe_worker([], 16000, settings)
+        for callback in app.posted_callbacks:
+            callback()
+
+        self.assertEqual(app.postprocessor.process_calls[0][0], "raw transcript")
+        self.assertEqual(published[0].text, "corrected transcript")
+        self.assertEqual(app.overlay.cleaning_count, 1)
+        self.assertFalse(app.transcribing)
 
 
 if __name__ == "__main__":

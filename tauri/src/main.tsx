@@ -11,12 +11,28 @@ type AppSnapshot = {
   modelSnapshot: string;
   historyCount: number;
   speechRoot: string;
+  aiMode: string;
+  aiRuntimeState: string;
+  aiModelInstalled: boolean;
+  aiModelSizeLabel: string;
 };
 
 type HistoryItem = {
   id: string;
   createdAt: string;
   text: string;
+  originalText: string;
+  processingMode: string;
+  processingStatus: string;
+  processingMs: number;
+};
+
+type AiSettings = {
+  aiMode: "off" | "local" | "api";
+  aiLocalModelId: string;
+  aiApiBaseUrl: string;
+  aiApiModel: string;
+  aiTimeoutSeconds: number;
 };
 
 type Tab = "overview" | "controls" | "history" | "analysis" | "install";
@@ -30,6 +46,18 @@ const emptySnapshot: AppSnapshot = {
   modelSnapshot: "",
   historyCount: 0,
   speechRoot: "Speech install folder",
+  aiMode: "off",
+  aiRuntimeState: "stopped",
+  aiModelInstalled: false,
+  aiModelSizeLabel: "Not installed",
+};
+
+const defaultAiSettings: AiSettings = {
+  aiMode: "off",
+  aiLocalModelId: "ai-forever/sage-fredt5-distilled-95m",
+  aiApiBaseUrl: "https://api.openai.com/v1",
+  aiApiModel: "",
+  aiTimeoutSeconds: 12,
 };
 
 const demoHistory: HistoryItem[] = [
@@ -37,11 +65,19 @@ const demoHistory: HistoryItem[] = [
     id: "demo-1",
     createdAt: new Date().toISOString(),
     text: "Your latest transcript will appear here as a soft local note.",
+    originalText: "Your latest transcript will appear here as a soft local note.",
+    processingMode: "off",
+    processingStatus: "skipped",
+    processingMs: 0,
   },
   {
     id: "demo-2",
     createdAt: new Date(Date.now() - 900000).toISOString(),
     text: "History stays on this device, ready to search, copy, and review.",
+    originalText: "History stays on this device, ready to search, copy, and review.",
+    processingMode: "off",
+    processingStatus: "skipped",
+    processingMs: 0,
   },
 ];
 
@@ -62,6 +98,8 @@ function App() {
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<Tab>(getInitialTab());
+  const [aiSettings, setAiSettings] = useState<AiSettings>(defaultAiSettings);
+  const [apiKey, setApiKey] = useState("");
 
   async function refresh() {
     try {
@@ -75,6 +113,66 @@ function App() {
     } catch (error) {
       setLog(String(error));
       setHistory((current) => (current.length ? current : demoHistory));
+    }
+  }
+
+  async function saveAiSettings() {
+    setBusy(true);
+    try {
+      await invoke("save_app_settings", { payload: aiSettings });
+      await invoke<string>("speech_restart");
+      await refresh();
+      showToast("AI settings saved");
+    } catch (error) {
+      setLog(String(error));
+      showToast("Save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function installAiModel() {
+    setBusy(true);
+    try {
+      setLog("Downloading SAGE 95M...");
+      const output = await invoke<string>("speech_ai_install");
+      setLog(output.trim());
+      await refresh();
+      showToast("SAGE is ready");
+    } catch (error) {
+      setLog(String(error));
+      showToast("Download failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveApiKey() {
+    if (!apiKey.trim()) return;
+    setBusy(true);
+    try {
+      await invoke<string>("speech_set_api_key", { apiKey });
+      setApiKey("");
+      showToast("API key saved securely");
+    } catch (error) {
+      setLog(String(error));
+      showToast("Key save failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteApiKey() {
+    setBusy(true);
+    try {
+      await invoke<string>("speech_delete_api_key");
+      setApiKey("");
+      showToast("API key removed");
+    } catch (error) {
+      setLog(String(error));
+      showToast("Key removal failed");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -115,6 +213,7 @@ function App() {
 
   useEffect(() => {
     refresh();
+    invoke<AiSettings>("app_settings").then(setAiSettings).catch((error) => setLog(String(error)));
     const timer = window.setInterval(() => {
       refresh();
     }, 2500);
@@ -194,10 +293,18 @@ function App() {
 
           {tab === "controls" && (
             <Controls
+              aiSettings={aiSettings}
+              apiKey={apiKey}
               busy={busy}
               log={log}
               snapshot={snapshot}
+              onAiSettings={setAiSettings}
               onAction={runAction}
+              onApiKey={setApiKey}
+              onDeleteApiKey={deleteApiKey}
+              onInstallAi={installAiModel}
+              onSaveAi={saveAiSettings}
+              onSaveApiKey={saveApiKey}
             />
           )}
 
@@ -300,6 +407,11 @@ function Overview({
         />
         <Metric title="History" value={String(snapshot.historyCount)} detail="local transcripts" />
         <Metric title="Device" value="CPU" detail="stable default" />
+        <Metric
+          title="AI cleanup"
+          value={snapshot.aiMode === "off" ? "Off" : snapshot.aiMode === "local" ? "Local" : "API"}
+          detail={snapshot.aiMode === "local" ? `${snapshot.aiModelSizeLabel} · ${snapshot.aiRuntimeState}` : "conservative correction"}
+        />
       </section>
 
       <article className="note-card latest-note">
@@ -316,15 +428,31 @@ function Overview({
 }
 
 function Controls({
+  aiSettings,
+  apiKey,
   busy,
   log,
   snapshot,
   onAction,
+  onAiSettings,
+  onApiKey,
+  onDeleteApiKey,
+  onInstallAi,
+  onSaveAi,
+  onSaveApiKey,
 }: {
+  aiSettings: AiSettings;
+  apiKey: string;
   busy: boolean;
   log: string;
   snapshot: AppSnapshot;
   onAction: (command: ActionCommand) => void;
+  onAiSettings: (settings: AiSettings) => void;
+  onApiKey: (value: string) => void;
+  onDeleteApiKey: () => void;
+  onInstallAi: () => void;
+  onSaveAi: () => void;
+  onSaveApiKey: () => void;
 }) {
   return (
     <div className="controls-layout">
@@ -379,6 +507,75 @@ function Controls({
             <Route label="Clipboard" active />
             <Route label="History" active />
           </div>
+        </article>
+
+        <article className="soft-panel ai-panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">AI cleanup</p>
+              <h4>Transcript polish</h4>
+            </div>
+            <span className={`mini-status ${aiSettings.aiMode}`}>{aiSettings.aiMode}</span>
+          </div>
+          <div className="segmented interactive" aria-label="AI cleanup mode">
+            {(["off", "local", "api"] as const).map((mode) => (
+              <button
+                key={mode}
+                className={aiSettings.aiMode === mode ? "active" : ""}
+                onClick={() => onAiSettings({ ...aiSettings, aiMode: mode })}
+              >
+                {mode === "off" ? "Off" : mode === "local" ? "Local" : "API"}
+              </button>
+            ))}
+          </div>
+
+          {aiSettings.aiMode === "local" && (
+            <div className="ai-config">
+              <div className="model-line">
+                <div>
+                  <strong>SAGE 95M</strong>
+                  <span>{snapshot.aiModelInstalled ? `${snapshot.aiModelSizeLabel} · ${snapshot.aiRuntimeState}` : "Not installed"}</span>
+                </div>
+                <button className="ghost-button" disabled={busy || snapshot.aiModelInstalled} onClick={onInstallAi}>
+                  {snapshot.aiModelInstalled ? (snapshot.aiRuntimeState === "loaded" ? "Loaded" : "Ready") : "Download"}
+                </button>
+              </div>
+              <p className="panel-copy">Russian spelling, punctuation, and casing on CPU.</p>
+            </div>
+          )}
+
+          {aiSettings.aiMode === "api" && (
+            <div className="ai-config form-stack">
+              <label>
+                <span>Base URL</span>
+                <input
+                  value={aiSettings.aiApiBaseUrl}
+                  onChange={(event) => onAiSettings({ ...aiSettings, aiApiBaseUrl: event.target.value })}
+                />
+              </label>
+              <label>
+                <span>Model</span>
+                <input
+                  value={aiSettings.aiApiModel}
+                  onChange={(event) => onAiSettings({ ...aiSettings, aiApiModel: event.target.value })}
+                  placeholder="provider model name"
+                />
+              </label>
+              <label>
+                <span>API key</span>
+                <div className="secret-row">
+                  <input type="password" value={apiKey} onChange={(event) => onApiKey(event.target.value)} placeholder="stored in system keychain" />
+                  <button className="ghost-button" disabled={busy || !apiKey.trim()} onClick={onSaveApiKey}>Save key</button>
+                </div>
+              </label>
+              <button className="text-button" disabled={busy} onClick={onDeleteApiKey}>Remove saved key</button>
+              <p className="privacy-note">API mode sends transcript text to this endpoint.</p>
+            </div>
+          )}
+
+          <button className="primary-button full-button" disabled={busy} onClick={onSaveAi}>
+            Save and restart
+          </button>
         </article>
       </section>
 
@@ -447,12 +644,14 @@ function History({
   onFilter: (value: string) => void;
   onSelect: (id: string) => void;
 }) {
+  const [showOriginal, setShowOriginal] = useState(false);
+  const selectedText = showOriginal ? selected?.originalText : selected?.text;
   return (
     <div className="history-layout">
       <header className="history-header">
         <div>
           <p className="eyebrow">History</p>
-          <h3>{filteredHistory.length} transcripts</h3>
+          <h3>{filteredHistory.length} shown</h3>
         </div>
         <input
           value={filter}
@@ -480,10 +679,21 @@ function History({
 
         <article className="reader-card lifted">
           <div>
-            <p className="eyebrow">Selected transcript</p>
-            <p>{selected?.text || "Choose a transcript from the left."}</p>
+            <div className="reader-heading">
+              <div>
+                <p className="eyebrow">Selected transcript</p>
+                {selected && <span className={`history-state ${selected.processingStatus}`}>{selected.processingMode} · {selected.processingStatus} · {selected.processingMs} ms</span>}
+              </div>
+              {selected && selected.originalText !== selected.text && (
+                <div className="segmented compact">
+                  <button className={!showOriginal ? "active" : ""} onClick={() => setShowOriginal(false)}>Clean</button>
+                  <button className={showOriginal ? "active" : ""} onClick={() => setShowOriginal(true)}>Original</button>
+                </div>
+              )}
+            </div>
+            <p>{selectedText || "Choose a transcript from the left."}</p>
           </div>
-          <button className="ghost-button" onClick={() => selected && onCopy(selected.text)} disabled={!selected}>
+          <button className="ghost-button" onClick={() => selectedText && onCopy(selectedText)} disabled={!selected}>
             Copy
           </button>
         </article>
