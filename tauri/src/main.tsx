@@ -29,6 +29,8 @@ type HistoryItem = {
 
 type AiSettings = {
   aiMode: "off" | "local" | "api";
+  aiProfile: "clean" | "refine";
+  aiGlossary: string;
   aiLocalModelId: string;
   aiApiBaseUrl: string;
   aiApiModel: string;
@@ -54,6 +56,8 @@ const emptySnapshot: AppSnapshot = {
 
 const defaultAiSettings: AiSettings = {
   aiMode: "off",
+  aiProfile: "clean",
+  aiGlossary: "",
   aiLocalModelId: "ai-forever/sage-fredt5-distilled-95m",
   aiApiBaseUrl: "https://api.openai.com/v1",
   aiApiModel: "",
@@ -454,6 +458,14 @@ function Controls({
   onSaveAi: () => void;
   onSaveApiKey: () => void;
 }) {
+  function chooseAiMode(mode: AiSettings["aiMode"]) {
+    onAiSettings({
+      ...aiSettings,
+      aiMode: mode,
+      aiProfile: mode === "api" ? aiSettings.aiProfile : "clean",
+    });
+  }
+
   return (
     <div className="controls-layout">
       <article className="control-hero lifted">
@@ -522,19 +534,40 @@ function Controls({
               <button
                 key={mode}
                 className={aiSettings.aiMode === mode ? "active" : ""}
-                onClick={() => onAiSettings({ ...aiSettings, aiMode: mode })}
+                onClick={() => chooseAiMode(mode)}
               >
                 {mode === "off" ? "Off" : mode === "local" ? "Local" : "API"}
               </button>
             ))}
           </div>
 
+          {aiSettings.aiMode !== "off" && (
+            <div className="profile-row">
+              <div>
+                <span className="field-label">Polish style</span>
+                {aiSettings.aiMode !== "api" && <small>Refine uses API</small>}
+              </div>
+              <div className="segmented interactive profile" aria-label="Polish style">
+                {(["clean", "refine"] as const).map((profile) => (
+                  <button
+                    key={profile}
+                    className={aiSettings.aiProfile === profile ? "active" : ""}
+                    disabled={profile === "refine" && aiSettings.aiMode !== "api"}
+                    onClick={() => onAiSettings({ ...aiSettings, aiProfile: profile })}
+                  >
+                    {profile === "clean" ? "Clean" : "Refine"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {aiSettings.aiMode === "local" && (
             <div className="ai-config">
               <div className="model-line">
                 <div>
                   <strong>SAGE 95M</strong>
-                  <span>{snapshot.aiModelInstalled ? `${snapshot.aiModelSizeLabel} · ${snapshot.aiRuntimeState}` : "Not installed"}</span>
+                  <span>{snapshot.aiModelInstalled ? `${snapshot.aiModelSizeLabel} / ${snapshot.aiRuntimeState}` : "Not installed"}</span>
                 </div>
                 <button className="ghost-button" disabled={busy || snapshot.aiModelInstalled} onClick={onInstallAi}>
                   {snapshot.aiModelInstalled ? (snapshot.aiRuntimeState === "loaded" ? "Loaded" : "Ready") : "Download"}
@@ -571,6 +604,19 @@ function Controls({
               <button className="text-button" disabled={busy} onClick={onDeleteApiKey}>Remove saved key</button>
               <p className="privacy-note">API mode sends transcript text to this endpoint.</p>
             </div>
+          )}
+
+          {aiSettings.aiMode !== "off" && (
+            <label className="glossary-field">
+              <span className="field-label">Terminology</span>
+              <textarea
+                value={aiSettings.aiGlossary}
+                onChange={(event) => onAiSettings({ ...aiSettings, aiGlossary: event.target.value })}
+                placeholder={"DeepSeek\nDeep-Seag -> DeepSeek"}
+                rows={4}
+                spellCheck={false}
+              />
+            </label>
           )}
 
           <button className="primary-button full-button" disabled={busy} onClick={onSaveAi}>

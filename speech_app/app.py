@@ -69,6 +69,7 @@ class SpeechApp:
         self.hotkey_listener: GlobalHotkeyListener | None = None
         self.transcribing = False
         self.model_loading = False
+        self.ai_loading = False
         self.last_error = ""
         self._write_runtime_state("unloaded")
 
@@ -83,6 +84,8 @@ class SpeechApp:
             self._show_primary_window()
         if self.settings.preload_model and self.settings.engine_enabled:
             self.load_model_background()
+        if self.settings.ai_mode == "local":
+            self.load_corrector_background()
         self.root.mainloop()
 
     def post_ui(self, callback: Callable[[], None]) -> None:
@@ -149,6 +152,75 @@ class SpeechApp:
         self.settings_store.save(self.settings)
         self.unload_model()
 
+    def current_ai_mode(self) -> str:
+        return self.settings.ai_mode
+
+    def current_ai_profile(self) -> str:
+        return self.settings.ai_profile
+
+    def set_ai_mode(self, mode: str) -> None:
+        mode = mode.strip().lower()
+        if mode not in {"off", "local", "api"}:
+            raise ValueError(f"Unsupported AI mode: {mode}")
+        self.settings.ai_mode = mode
+        if mode != "api" and self.settings.ai_profile == "refine":
+            self.settings.ai_profile = "clean"
+        self.settings_store.save(self.settings)
+        self.window.refresh()
+        self.tray.refresh_menu()
+        if mode == "local":
+            self.load_corrector_background()
+            return
+        self.ai_loading = False
+        self.postprocessor.unload()
+        self._write_runtime_state(self._model_state_label())
+        self.overlay.show_notice(f"Polish {mode}")
+
+    def set_ai_profile(self, profile: str) -> None:
+        profile = profile.strip().lower()
+        if profile not in {"clean", "refine"}:
+            raise ValueError(f"Unsupported polish profile: {profile}")
+        if profile == "refine" and self.settings.ai_mode != "api":
+            raise ValueError("Refine requires API mode")
+        self.settings.ai_profile = profile
+        self.settings_store.save(self.settings)
+        self.window.refresh()
+        self.tray.refresh_menu()
+
+    def load_corrector_background(self) -> None:
+        if self.settings.ai_mode != "local" or self.ai_loading:
+            return
+        if self.postprocessor.local_corrector.is_loaded:
+            self._write_runtime_state(self._model_state_label())
+            return
+        self.ai_loading = True
+        self._write_runtime_state(self._model_state_label())
+        self.post_ui(lambda: self.overlay.show_notice("SAGE loading"))
+        threading.Thread(target=self._load_corrector_worker, daemon=True).start()
+
+    def _load_corrector_worker(self) -> None:
+        try:
+            self.postprocessor.load(self.settings)
+        except Exception as exc:
+            self.last_error = f"AI correction unavailable: {exc}"
+            self.post_ui(lambda exc=exc: self._corrector_load_failed(exc))
+            return
+        self.post_ui(self._corrector_load_succeeded)
+
+    def _corrector_load_succeeded(self) -> None:
+        self.ai_loading = False
+        self._write_runtime_state(self._model_state_label())
+        self.window.refresh()
+        self.tray.refresh_menu()
+        self.overlay.show_notice("SAGE loaded")
+
+    def _corrector_load_failed(self, exc: Exception) -> None:
+        self.ai_loading = False
+        self._write_runtime_state(self._model_state_label(), last_error=str(exc))
+        self.window.refresh()
+        self.tray.refresh_menu()
+        self.overlay.show_notice("SAGE unavailable", timeout_ms=2200)
+
     def engine_enabled(self) -> bool:
         return self.settings.engine_enabled
 
@@ -179,6 +251,8 @@ class SpeechApp:
             "backend": self.settings.backend,
             "hotkey": self.settings.hotkey,
             "ai_mode": self.settings.ai_mode,
+            "ai_profile": self.settings.ai_profile,
+            "ai_glossary": self.settings.ai_glossary,
             "ai_local_model_id": self.settings.ai_local_model_id,
             "ai_api_base_url": self.settings.ai_api_base_url,
             "ai_api_model": self.settings.ai_api_model,
@@ -195,6 +269,14 @@ class SpeechApp:
         self.settings.backend = str(values["backend"])
         self.settings.hotkey = str(values["hotkey"])
         self.settings.ai_mode = str(values.get("ai_mode", self.settings.ai_mode))
+        self.settings.ai_profile = str(
+            values.get("ai_profile", self.settings.ai_profile)
+        )
+        if self.settings.ai_mode != "api" and self.settings.ai_profile == "refine":
+            self.settings.ai_profile = "clean"
+        self.settings.ai_glossary = str(
+            values.get("ai_glossary", self.settings.ai_glossary)
+        )
         self.settings.ai_local_model_id = str(
             values.get("ai_local_model_id", self.settings.ai_local_model_id)
         )
@@ -341,6 +423,8 @@ class SpeechApp:
         if mode == "off":
             return "off"
         if mode == "local":
+            if self.ai_loading:
+                return "loading"
             return "loaded" if self.postprocessor.local_corrector.is_loaded else "unloaded"
         return "configured" if mode == "api" else "error"
 

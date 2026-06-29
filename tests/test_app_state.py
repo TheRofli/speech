@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from speech_app.app import SpeechApp
 from speech_app.postprocess import CorrectionResult
@@ -25,6 +25,9 @@ class FakeTray:
 
     def refresh_menu(self) -> None:
         self.refresh_count += 1
+
+    def start(self) -> bool:
+        return True
 
     def stop(self) -> None:
         self.stop_count += 1
@@ -84,6 +87,14 @@ class FakeRoot:
     def __init__(self) -> None:
         self.quit_count = 0
         self.destroy_count = 0
+        self.after_calls = []
+        self.mainloop_count = 0
+
+    def after(self, delay, callback) -> None:
+        self.after_calls.append((delay, callback))
+
+    def mainloop(self) -> None:
+        self.mainloop_count += 1
 
     def quit(self) -> None:
         self.quit_count += 1
@@ -106,8 +117,11 @@ class FakeEngine:
 
 class FakePostProcessor:
     def __init__(self) -> None:
+        self.local_corrector = self
+        self.is_loaded = False
         self.unload_count = 0
         self.process_calls = []
+        self.load_calls = []
 
     def unload(self) -> None:
         self.unload_count += 1
@@ -115,6 +129,17 @@ class FakePostProcessor:
     def process(self, text, settings) -> CorrectionResult:
         self.process_calls.append((text, settings))
         return CorrectionResult(text, "corrected transcript", "local", "applied", 42)
+
+    def load(self, settings) -> None:
+        self.load_calls.append(settings.ai_mode)
+
+
+class FakeSettingsStore:
+    def __init__(self) -> None:
+        self.saved = []
+
+    def save(self, settings) -> None:
+        self.saved.append((settings.ai_mode, settings.ai_profile))
 
 
 class FakeThread:
@@ -129,6 +154,22 @@ class FakeThread:
 
 
 class AppStateTests(unittest.TestCase):
+    def test_run_preloads_selected_local_corrector(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.root = FakeRoot()
+        app.tray = FakeTray()
+        app.settings = AppSettings(ai_mode="local", preload_model=True)
+        app.window = FakeWindow()
+        app._start_hotkeys = Mock()
+        app.load_model_background = Mock()
+        app.load_corrector_background = Mock()
+
+        app.run()
+
+        app.load_model_background.assert_called_once_with()
+        app.load_corrector_background.assert_called_once_with()
+        self.assertEqual(app.root.mainloop_count, 1)
+
     def test_model_state_change_refreshes_window_tray_and_notice(self):
         app = SpeechApp.__new__(SpeechApp)
         app.window = FakeWindow()
@@ -166,6 +207,7 @@ class AppStateTests(unittest.TestCase):
         app.root = FakeRoot()
         app.engine = FakeEngine()
         app.postprocessor = FakePostProcessor()
+        app.model_loading = False
 
         app._quit_ui()
 
@@ -217,6 +259,7 @@ class AppStateTests(unittest.TestCase):
         app = SpeechApp.__new__(SpeechApp)
         app.engine = FakeEngine()
         app.postprocessor = FakePostProcessor()
+        app.model_loading = False
         app.overlay = FakeOverlay()
         app.transcribing = True
         app.posted_callbacks = []
@@ -233,6 +276,70 @@ class AppStateTests(unittest.TestCase):
         self.assertEqual(published[0].text, "corrected transcript")
         self.assertEqual(app.overlay.cleaning_count, 1)
         self.assertFalse(app.transcribing)
+
+    def test_set_ai_mode_off_persists_and_unloads_corrector(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.settings = AppSettings(ai_mode="local")
+        app.settings_store = FakeSettingsStore()
+        app.postprocessor = FakePostProcessor()
+        app.engine = FakeEngine()
+        app.model_loading = False
+        app.overlay = FakeOverlay()
+        app.window = FakeWindow()
+        app.tray = FakeTray()
+        app._write_runtime_state = lambda *_args, **_kwargs: None
+
+        app.set_ai_mode("off")
+
+        self.assertEqual(app.current_ai_mode(), "off")
+        self.assertEqual(app.settings_store.saved[-1], ("off", "clean"))
+        self.assertEqual(app.postprocessor.unload_count, 1)
+        self.assertEqual(app.window.refresh_count, 1)
+        self.assertEqual(app.tray.refresh_count, 1)
+
+    def test_set_ai_mode_local_starts_background_load(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.settings = AppSettings(ai_mode="off")
+        app.settings_store = FakeSettingsStore()
+        app.postprocessor = FakePostProcessor()
+        app.engine = FakeEngine()
+        app.model_loading = False
+        app.overlay = FakeOverlay()
+        app.window = FakeWindow()
+        app.tray = FakeTray()
+        app.ai_loading = False
+        app.posted_callbacks = []
+        app.post_ui = app.posted_callbacks.append
+        app._write_runtime_state = lambda *_args, **_kwargs: None
+
+        with patch("speech_app.app.threading.Thread", FakeThread):
+            app.set_ai_mode("local")
+
+        self.assertEqual(app.current_ai_mode(), "local")
+        self.assertTrue(app.ai_loading)
+        self.assertEqual(app.settings_store.saved[-1], ("local", "clean"))
+
+    def test_refine_profile_requires_api_mode(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.settings = AppSettings(ai_mode="local")
+        app.settings_store = FakeSettingsStore()
+
+        with self.assertRaisesRegex(ValueError, "API"):
+            app.set_ai_profile("refine")
+
+        self.assertEqual(app.settings.ai_profile, "clean")
+
+    def test_api_mode_accepts_refine_profile(self):
+        app = SpeechApp.__new__(SpeechApp)
+        app.settings = AppSettings(ai_mode="api")
+        app.settings_store = FakeSettingsStore()
+        app.window = FakeWindow()
+        app.tray = FakeTray()
+
+        app.set_ai_profile("refine")
+
+        self.assertEqual(app.current_ai_profile(), "refine")
+        self.assertEqual(app.settings_store.saved[-1], ("api", "refine"))
 
 
 if __name__ == "__main__":

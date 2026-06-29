@@ -119,6 +119,8 @@ fn app_settings() -> Result<Value, String> {
     let settings = read_settings(&speech_root());
     Ok(json!({
         "aiMode": settings["ai_mode"].as_str().unwrap_or("off"),
+        "aiProfile": settings["ai_profile"].as_str().unwrap_or("clean"),
+        "aiGlossary": settings["ai_glossary"].as_str().unwrap_or(""),
         "aiLocalModelId": settings["ai_local_model_id"].as_str().unwrap_or("ai-forever/sage-fredt5-distilled-95m"),
         "aiApiBaseUrl": settings["ai_api_base_url"].as_str().unwrap_or("https://api.openai.com/v1"),
         "aiApiModel": settings["ai_api_model"].as_str().unwrap_or(""),
@@ -137,6 +139,8 @@ fn save_app_settings(payload: Value) -> Result<(), String> {
 
     let mappings = [
         ("aiMode", "ai_mode"),
+        ("aiProfile", "ai_profile"),
+        ("aiGlossary", "ai_glossary"),
         ("aiLocalModelId", "ai_local_model_id"),
         ("aiApiBaseUrl", "ai_api_base_url"),
         ("aiApiModel", "ai_api_model"),
@@ -149,6 +153,14 @@ fn save_app_settings(payload: Value) -> Result<(), String> {
     }
     if !matches!(object.get("ai_mode").and_then(Value::as_str), Some("off" | "local" | "api")) {
         return Err("AI mode must be off, local, or api".to_string());
+    }
+    if !matches!(object.get("ai_profile").and_then(Value::as_str), Some("clean" | "refine")) {
+        return Err("AI profile must be clean or refine".to_string());
+    }
+    if object.get("ai_mode").and_then(Value::as_str) != Some("api")
+        && object.get("ai_profile").and_then(Value::as_str) == Some("refine")
+    {
+        object.insert("ai_profile".to_string(), Value::String("clean".to_string()));
     }
     fs::create_dir_all(path.parent().unwrap()).map_err(|error| error.to_string())?;
     let serialized = serde_json::to_string_pretty(&settings).map_err(|error| error.to_string())?;

@@ -120,6 +120,32 @@ Speech has three cleanup modes:
   `ai-forever/sage-fredt5-distilled-95m`.
 - `API`: send transcript text to a configurable OpenAI-compatible endpoint.
 
+You can switch the cleanup provider directly from the tray through
+`Transcript polish > Off / Local / API`. The `Polish style` tray submenu and
+the Controls tab provide two editing profiles:
+
+- `Clean`: fix spelling, punctuation, capitalization, obvious recognition
+  substitutions, and glossary terms while preserving wording and intent.
+- `Refine`: additionally remove accidental repetition and make small wording
+  improvements without expanding or answering the transcript.
+
+The local SAGE model supports `Clean`. `Refine` is available in `API` mode.
+Changing these options does not restart Parakeet.
+
+The Controls tab also accepts a newline-separated terminology glossary. Use a
+canonical term by itself, or map a common recognition error with `->`:
+
+```text
+DeepSeek
+Deep-Seag -> DeepSeek
+Qore-Code
+```
+
+API cleanup treats the transcript as untrusted text to edit, requests a small
+JSON response, and rejects responses that look like an assistant answer,
+Markdown article, or unrelated expansion. If validation fails, Speech safely
+publishes the original Parakeet transcript.
+
 Install the optional local corrector:
 
 ```powershell
@@ -190,7 +216,8 @@ When cleanup is enabled, the overlay changes from transcription dots to pink
 cleanup dots before insertion. Any cleanup failure publishes the original text.
 
 The tray menu lets you open the window, copy the last transcript, load/unload
-Parakeet, switch CPU/CUDA mode, and quit.
+Parakeet, switch CPU/CUDA mode, select the transcript cleanup provider and
+style, and quit.
 
 ## Commands
 
@@ -239,8 +266,9 @@ tmp/        temporary audio files
 ```
 
 Audio is never uploaded by Speech. In `Off` and `Local` modes, transcripts stay
-on the device. In `API` mode, transcript text is sent to the endpoint configured
-in the Controls tab. Hugging Face is contacted only when downloading models.
+on the device. In `API` mode, transcript text and configured glossary terms are
+sent to the endpoint configured in the Controls tab. Hugging Face is contacted
+only when downloading models.
 
 ## Development
 

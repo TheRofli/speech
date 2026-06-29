@@ -27,6 +27,8 @@ class AppSettings:
     vad_sensitivity: float = 0.02
     history_limit: int = 100
     ai_mode: str = "off"
+    ai_profile: str = "clean"
+    ai_glossary: str = ""
     ai_local_model_id: str = "ai-forever/sage-fredt5-distilled-95m"
     ai_api_base_url: str = "https://api.openai.com/v1"
     ai_api_model: str = ""

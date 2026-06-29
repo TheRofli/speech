@@ -12,10 +12,14 @@ class TrayApp(Protocol):
     def unload_model(self) -> None: ...
     def set_device(self, device: str) -> None: ...
     def set_backend(self, backend: str) -> None: ...
+    def set_ai_mode(self, mode: str) -> None: ...
+    def set_ai_profile(self, profile: str) -> None: ...
     def quit(self) -> None: ...
     def engine_enabled(self) -> bool: ...
     def current_device(self) -> str: ...
     def current_backend(self) -> str: ...
+    def current_ai_mode(self) -> str: ...
+    def current_ai_profile(self) -> str: ...
     def model_loaded(self) -> bool: ...
     def model_is_loading(self) -> bool: ...
 
@@ -108,6 +112,47 @@ class TrayController:
                         "NeMo",
                         lambda: self.app.set_backend("nemo"),
                         checked=lambda _: self.app.current_backend() == "nemo",
+                        radio=True,
+                    ),
+                ),
+            ),
+            pystray.MenuItem(
+                "Transcript polish",
+                pystray.Menu(
+                    item(
+                        "Off",
+                        lambda: self.app.set_ai_mode("off"),
+                        checked=lambda _: self.app.current_ai_mode() == "off",
+                        radio=True,
+                    ),
+                    item(
+                        "Local",
+                        lambda: self.app.set_ai_mode("local"),
+                        checked=lambda _: self.app.current_ai_mode() == "local",
+                        radio=True,
+                    ),
+                    item(
+                        "API",
+                        lambda: self.app.set_ai_mode("api"),
+                        checked=lambda _: self.app.current_ai_mode() == "api",
+                        radio=True,
+                    ),
+                ),
+            ),
+            pystray.MenuItem(
+                "Polish style",
+                pystray.Menu(
+                    item(
+                        "Clean",
+                        lambda: self.app.set_ai_profile("clean"),
+                        checked=lambda _: self.app.current_ai_profile() == "clean",
+                        radio=True,
+                    ),
+                    item(
+                        "Refine",
+                        lambda: self.app.set_ai_profile("refine"),
+                        checked=lambda _: self.app.current_ai_profile() == "refine",
+                        enabled=lambda _: self.app.current_ai_mode() == "api",
                         radio=True,
                     ),
                 ),

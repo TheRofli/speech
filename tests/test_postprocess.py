@@ -88,6 +88,52 @@ class TranscriptPostProcessorTests(unittest.TestCase):
         self.assertEqual(result.text, original)
         self.assertEqual(result.status, "rejected")
 
+    def test_clean_rejects_assistant_response_with_markdown_and_emoji(self):
+        local = FakeCorrector(
+            output=(
+                "Спасибо за описание задачи.\n\n## Что нужно сделать:\n"
+                "1. Загрузите файлы проекта.\n2. Дождитесь анализа. 🚀"
+            )
+        )
+        processor = TranscriptPostProcessor(local_corrector=local)
+        original = (
+            "Привет. Это мой проект. Пожалуйста, глубоко проанализируй его, "
+            "ничего не создавай и сначала ответь, что думаешь."
+        )
+
+        result = processor.process(original, AppSettings(ai_mode="local"))
+
+        self.assertEqual(result.text, original)
+        self.assertEqual(result.status, "rejected")
+
+    def test_refine_accepts_small_rephrase_but_preserves_constraints(self):
+        api = FakeCorrector(
+            output="Пожалуйста, подробно проанализируй проект, но ничего не создавай."
+        )
+        processor = TranscriptPostProcessor(api_corrector=api)
+        original = "Пожалуйста, проект подробно проанализируй, но ничего не создавай."
+
+        result = processor.process(
+            original,
+            AppSettings(ai_mode="api", ai_profile="refine"),
+        )
+
+        self.assertEqual(result.status, "applied")
+
+    def test_glossary_alias_is_applied_to_corrected_text(self):
+        local = FakeCorrector(output="Модель Deep-Seag работает быстро.")
+        processor = TranscriptPostProcessor(local_corrector=local)
+
+        result = processor.process(
+            "Модель Deep-Seag работает быстро.",
+            AppSettings(
+                ai_mode="local",
+                ai_glossary="Deep-Seag -> DeepSeek",
+            ),
+        )
+
+        self.assertEqual(result.text, "Модель DeepSeek работает быстро.")
+
 
 class CorrectionResultTests(unittest.TestCase):
     def test_result_exposes_history_metadata(self):
