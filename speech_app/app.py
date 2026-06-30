@@ -84,8 +84,6 @@ class SpeechApp:
             self._show_primary_window()
         if self.settings.preload_model and self.settings.engine_enabled:
             self.load_model_background()
-        if self.settings.ai_mode == "local":
-            self.load_corrector_background()
         self.root.mainloop()
 
     def post_ui(self, callback: Callable[[], None]) -> None:

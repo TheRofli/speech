@@ -154,7 +154,7 @@ class FakeThread:
 
 
 class AppStateTests(unittest.TestCase):
-    def test_run_preloads_selected_local_corrector(self):
+    def test_run_starts_only_the_sequential_model_preload_pipeline(self):
         app = SpeechApp.__new__(SpeechApp)
         app.root = FakeRoot()
         app.tray = FakeTray()
@@ -167,7 +167,7 @@ class AppStateTests(unittest.TestCase):
         app.run()
 
         app.load_model_background.assert_called_once_with()
-        app.load_corrector_background.assert_called_once_with()
+        app.load_corrector_background.assert_not_called()
         self.assertEqual(app.root.mainloop_count, 1)
 
     def test_model_state_change_refreshes_window_tray_and_notice(self):

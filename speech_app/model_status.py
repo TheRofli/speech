@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+_WEIGHT_PATTERNS = ("*.safetensors", "*.bin", "*.pt", "*.pth", "*.nemo")
+
+
 @dataclass(frozen=True, slots=True)
 class ModelStatus:
     installed: bool
@@ -31,7 +34,11 @@ def find_model_status(hf_home: Path, model_id: str) -> ModelStatus:
         return ModelStatus(False, "", None, 0.0)
 
     snapshots = sorted(
-        [path for path in snapshots_dir.iterdir() if path.is_dir()],
+        [
+            path
+            for path in snapshots_dir.iterdir()
+            if path.is_dir() and _has_model_weights(path)
+        ],
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -45,4 +52,12 @@ def find_model_status(hf_home: Path, model_id: str) -> ModelStatus:
         snapshot=snapshot.name,
         path=snapshot,
         size_mb=round(size / (1024 * 1024), 3),
+    )
+
+
+def _has_model_weights(snapshot: Path) -> bool:
+    return any(
+        path.is_file() and path.stat().st_size > 0
+        for pattern in _WEIGHT_PATTERNS
+        for path in snapshot.glob(pattern)
     )

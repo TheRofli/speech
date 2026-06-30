@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import os
 import tempfile
 import wave
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+from .model_status import find_model_status
 from .settings import AppSettings
 
 
@@ -50,15 +52,25 @@ class ParakeetEngine:
             raise EngineUnavailable(f"Unsupported backend: {settings.backend}")
 
         device = self._resolve_device(settings.device)
+        fallback = Path(__file__).resolve().parents[1] / "models" / "huggingface"
+        hf_home = Path(os.environ.get("HF_HOME", str(fallback)))
+        status = find_model_status(hf_home, settings.model_id)
+        if not status.installed or status.path is None:
+            raise EngineUnavailable(
+                "Parakeet is not installed locally. Run: speech parakeet install"
+            )
+        model_path = status.path
         if backend in {"auto", "transformers"}:
             try:
-                self.loaded = self._load_transformers(settings.model_id, device)
+                self.loaded = self._load_transformers(
+                    settings.model_id, device, model_path
+                )
                 return self.loaded
             except EngineUnavailable:
                 if backend == "transformers":
                     raise
 
-        self.loaded = self._load_nemo(settings.model_id, device)
+        self.loaded = self._load_nemo(settings.model_id, device, model_path)
         return self.loaded
 
     def transcribe(
@@ -94,7 +106,15 @@ class ParakeetEngine:
             return "cuda"
         return "cpu"
 
-    def _load_transformers(self, model_id: str, device: str) -> LoadedEngine:
+    def _load_transformers(
+        self, model_id: str, device: str, model_path: Path
+    ) -> LoadedEngine:
+        if not any(model_path.glob("*.safetensors")) and not any(
+            model_path.glob("*.bin")
+        ):
+            raise EngineUnavailable(
+                "The local snapshot does not contain Transformers weights."
+            )
         try:
             import torch
             import transformers
@@ -116,11 +136,24 @@ class ParakeetEngine:
             raise EngineUnavailable("CUDA was selected, but torch cannot see a GPU.")
 
         dtype = torch.float32 if device == "cpu" else torch.float16
-        processor = AutoProcessor.from_pretrained(model_id)
         try:
-            model = AutoModelForTDT.from_pretrained(model_id, dtype=dtype)
-        except TypeError:
-            model = AutoModelForTDT.from_pretrained(model_id, torch_dtype=dtype)
+            processor = AutoProcessor.from_pretrained(
+                str(model_path), local_files_only=True
+            )
+            try:
+                model = AutoModelForTDT.from_pretrained(
+                    str(model_path), dtype=dtype, local_files_only=True
+                )
+            except TypeError:
+                model = AutoModelForTDT.from_pretrained(
+                    str(model_path),
+                    torch_dtype=dtype,
+                    local_files_only=True,
+                )
+        except Exception as exc:
+            raise EngineUnavailable(
+                "Could not load the local Transformers Parakeet snapshot."
+            ) from exc
         model.to(device)
         model.eval()
         return LoadedEngine(
@@ -160,7 +193,12 @@ class ParakeetEngine:
         decoded = processor.decode(output.sequences, skip_special_tokens=True)
         return _normalize_decoded_text(decoded)
 
-    def _load_nemo(self, model_id: str, device: str) -> LoadedEngine:
+    def _load_nemo(
+        self, model_id: str, device: str, model_path: Path
+    ) -> LoadedEngine:
+        nemo_files = sorted(model_path.glob("*.nemo"))
+        if not nemo_files:
+            raise EngineUnavailable("The local snapshot does not contain NeMo weights.")
         try:
             import nemo.collections.asr as nemo_asr
         except ImportError as exc:
@@ -169,7 +207,9 @@ class ParakeetEngine:
                 "backend is usually the easier route."
             ) from exc
 
-        model = nemo_asr.models.ASRModel.from_pretrained(model_name=model_id)
+        model = nemo_asr.models.ASRModel.restore_from(
+            restore_path=str(nemo_files[0]), map_location=device
+        )
         if device == "cuda":
             model = model.cuda()
         else:
@@ -221,4 +261,3 @@ def _write_temp_wav(audio: np.ndarray, sample_rate: int) -> Path:
         wav.setframerate(sample_rate)
         wav.writeframes(pcm.tobytes())
     return path
-
